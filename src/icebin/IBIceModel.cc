@@ -372,9 +372,14 @@ void IBIceModel::time_setup() {
   // super::m_grid_setup() trashes m_time->start().  Now set it correctly.
   m_time->set_start(params.time_start_s);
   m_time->set(params.time_start_s);
+ 
+  m_log->message(2, "* IBicemodel time_start_s %g \n",params.time_start_s);
+  m_log->message(2, "m_time->start() %g \n",m_time->start());
+  m_log->message(2, "m_time->end() %g \n",m_time->end());
 
-  m_log->message(2, "* Run time: [%s, %s]  (%s years, using the '%s' calendar)\n", m_time->start_date().c_str(),
-                 m_time->end_date().c_str(), m_time->run_length().c_str(), m_time->calendar().c_str());
+
+  m_log->message(2, "* Run time: [%s, %s]  (%s years, using the '%s' calendar)\n", m_time->date(m_time->start()).c_str(),
+                 m_time->date(m_time->end()).c_str(), m_time->run_length().c_str(), m_time->calendar().c_str());
 }
 
 

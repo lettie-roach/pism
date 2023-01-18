@@ -137,9 +137,14 @@ Time::Time(Config::ConstPtr conf,
     m_unit_system(unit_system),
     m_time_units(m_unit_system, "seconds") {
 
+  printf("LRTime::Time\n");
   init_calendar(calendar_string);
 
   m_run_start = years_to_seconds(m_config->get_double("time.start_year"));
+  printf("LRtime.start_year %g\n",m_config->get_double("time.start_year"));
+  printf("LRtime.run_length %g\n",m_config->get_double("time.run_length"));
+
+
   m_run_end   = increment_date(m_run_start, (int)m_config->get_double("time.run_length"));
 
   m_time_in_seconds = m_run_start;
@@ -173,10 +178,12 @@ void Time::set(double new_time) {
 }
 
 void Time::set_start(double new_start) {
+  printf("set_start = %g \n", new_start);
   m_run_start = new_start;
 }
 
 void Time::set_end(double new_end) {
+  printf("set_end = %g \n", new_end);
   m_run_end = new_end;
 }
 
@@ -243,6 +250,7 @@ std::string Time::CF_units_to_PISM_units(const std::string &input) const {
 bool Time::process_ys(double &result) {
   options::Real ys("-ys", "Start year", m_config->get_double("time.start_year"));
   result = years_to_seconds(ys);
+  printf("LRys=%g\n",ys);
   return ys.is_set();
 }
 
@@ -297,6 +305,9 @@ void Time::init(const Logger &log) {
   bool y_set = process_y(y_seconds);
   bool ys_set = process_ys(ys_seconds);
   bool ye_set = process_ye(ye_seconds);
+
+  printf("LR%g %g %g \n",y_seconds, ys_seconds, ye_seconds);
+
 
   if (ys_set && ye_set && y_set) {
     throw RuntimeError(PISM_ERROR_LOCATION, "all of -y, -ys, -ye are set.");
