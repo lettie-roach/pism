@@ -261,6 +261,8 @@ void IceModel::restart_2d(const PIO &input_file, unsigned int last_record) {
       intent     = var->metadata().get_string("pism_intent"),
       short_name = var->metadata().get_string("short_name");
 
+    printf("Reading %s \n",short_name.c_str());
+
     if (intent == "model_state" ||
         intent == "mapping"     ||
         intent == "climate_steady") {

@@ -118,7 +118,8 @@ BedThermalUnit::BedThermalUnit(IceGrid::ConstPtr g)
                                  "W m-2", "");
     m_top_surface_flux.metadata().set_string("glaciological_units", "mW m-2");
     m_top_surface_flux.metadata().set_string("comment", "positive values correspond to an upward flux");
-    m_top_surface_flux.write_in_glaciological_units = true;
+    // LR modified this, see below
+    m_top_surface_flux.write_in_glaciological_units = false;
   }
   {
     m_bottom_surface_flux.create(m_grid, "bheatflx", WITHOUT_GHOSTS);
@@ -128,7 +129,10 @@ BedThermalUnit::BedThermalUnit(IceGrid::ConstPtr g)
                                     "W m-2", "");
     m_bottom_surface_flux.metadata().set_string("glaciological_units", "mW m-2");
     m_bottom_surface_flux.metadata().set_string("comment", "positive values correspond to an upward flux");
-    m_bottom_surface_flux.write_in_glaciological_units = true;
+    // LR modified this to ensure bheatflx is always written in W m2
+    // the conversion from W m2 to mW m2 and back lost precision affecting restarts
+    // when pism is updated, check that this precision issue no longer occurs
+    m_bottom_surface_flux.write_in_glaciological_units = false;
     m_bottom_surface_flux.set_time_independent(true);
   }
 }
