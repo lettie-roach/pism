@@ -1,6 +1,6 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 #
-# Copyright (C) 2011, 2014, 2015, 2016 David Maxwell and Constantine Khroulev
+# Copyright (C) 2011, 2014, 2015, 2016, 2018 David Maxwell and Constantine Khroulev
 #
 # This file is part of PISM.
 #
@@ -24,6 +24,7 @@ import time
 # The main code for a run follows:
 if __name__ == '__main__':
     context = PISM.Context()
+    config = context.config
     com = context.com
 
     PISM.set_abort_on_sigint(True)
@@ -43,21 +44,21 @@ if __name__ == '__main__':
 
     PISM.show_usage_check_req_opts(context.log, "ssa_forward", ["-i"], usage)
 
-    input_file, input_file_set = PISM.optionsStringWasSet("-i", "input file with PISM model data")
-    if not input_file_set:
+    input_file = config.get_string("input.file")
+    if len(input_file) == 0:
         import sys
         sys.exit(1)
 
-    output_file = PISM.optionsString("-o", "output file", default="ssa_forward.nc")
+    config.set_string("output.file_name", "ssa_forward.nc")
 
     ssa_run = PISM.ssa.SSAFromInputFile(input_file)
 
     ssa_run.setup()
 
-    solve_t0 = time.clock()
+    solve_t0 = time.time()
     vel_ssa = ssa_run.solve()
-    solve_t = time.clock() - solve_t0
+    solve_t = time.time() - solve_t0
 
     PISM.verbPrintf(2, context.com, "Solve time %g seconds.\n", solve_t)
 
-    ssa_run.write(output_file)
+    ssa_run.write(config.get_string("output.file_name"))

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # generate figures in Getting Started section of User's Manual
 
@@ -30,7 +30,7 @@ from mpl_toolkits.basemap import Basemap
 try:
     from netCDF4 import Dataset as NC
 except:
-    print "netCDF4 is not installed!"
+    print("netCDF4 is not installed!")
     sys.exit(1)
 
 import numpy as np
@@ -39,13 +39,13 @@ from matplotlib import colors
 import sys
 
 if len(sys.argv) < 2:
-    print "ERROR: first argument must be root of filename ..."
+    print("ERROR: first argument must be root of filename ...")
     sys.exit(1)
 rootname = sys.argv[1]
 try:
     nc = NC(rootname + '.nc', 'r')
 except:
-    print "ERROR: can't read from file %s.nc ..." % rootname
+    print("ERROR: can't read from file %s.nc ..." % rootname)
     sys.exit(2)
 
 if len(sys.argv) >= 3:
@@ -88,7 +88,7 @@ elif field == 'mask':
     myvmin = 0.0
     myvmax = 4.0
     ticklist = [0, 1, 2, 3, 4]
-elif field == 'bmelt':
+elif field == 'basal_melt_rate_grounded':
     fill = -2.0e+09
     logscale = True
     contour100 = False
@@ -117,7 +117,7 @@ elif field == 'bwprel':
     myvmax = 1.0
     ticklist = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 else:
-    print 'invalid choice for FIELD option'
+    print('invalid choice for FIELD option')
     sys.exit(3)
 
 # we need to know longitudes and latitudes corresponding to grid
@@ -155,7 +155,7 @@ if (field == 'surfvelmag'):
     myvar = np.ma.array(myvar, mask=(thkvar == 0.0))
 elif (field != 'mask'):
     maskvar = np.squeeze(nc.variables['mask'][:])
-    if (field == 'bmelt') | (field == 'bwat'):
+    if (field == 'basal_melt_rate_grounded') | (field == 'bwat'):
         myvar[myvar < myvmin] = myvmin
     if (field == 'usurf'):
         myvar = np.ma.array(myvar, mask=(maskvar == 4))
@@ -202,5 +202,5 @@ m.drawparallels(np.arange(-55., 90., 5.), labels=[1, 0, 0, 0])
 m.drawmeridians(np.arange(-120., 30., 10.), labels=[0, 0, 0, 1])
 
 outname = rootname + '-' + field + '.png'
-print "saving image to file %s ..." % outname
+print("saving image to file %s ..." % outname)
 plt.savefig(outname, dpi=mydpi, bbox_inches='tight')

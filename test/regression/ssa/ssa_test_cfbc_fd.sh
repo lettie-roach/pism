@@ -16,37 +16,35 @@ then
   EXT=".py"
 fi
 
-# List of files to remove when done:
-files="foo-V.nc foo-V.nc~ test-V-out.txt"
-
-rm -f $files
+output=`mktemp pism-testv-XXXX` || exit 1
 
 set -e
 set -x
 
-OPTS="-verbose 1 -o foo-V.nc -My 3 -ssafd_ksp_type richardson -ssafd_pc_type lu"
+OPTS="-verbose 1 -o_size none -My 3 -ssafd_ksp_type richardson -ssafd_pc_type lu"
 
 # do stuff
-$MPIEXEC_COMMAND $PISM_PATH/ssa_test_cfbc${EXT} -Mx 201 $OPTS > test-V-out.txt
-$MPIEXEC_COMMAND $PISM_PATH/ssa_test_cfbc${EXT} -Mx 401 $OPTS >> test-V-out.txt
+$MPIEXEC_COMMAND $PISM_PATH/ssa_test_cfbc${EXT} -Mx 201 $OPTS > ${output}
+$MPIEXEC_COMMAND $PISM_PATH/ssa_test_cfbc${EXT} -Mx 401 $OPTS >> ${output}
 
 set +e
 
 # Check results:
-diff test-V-out.txt -  <<END-OF-OUTPUT
+diff ${output} -  <<END-OF-OUTPUT
 NUMERICAL ERRORS in velocity relative to exact solution:
 velocity  :  maxvector   prcntavvec      maxu      maxv       avu       avv
-                1.1032      0.06516    1.1032    0.0000    0.6357    0.0000
+                0.1050      0.00506    0.1050    0.0000    0.0493    0.0000
 NUM ERRORS DONE
 NUMERICAL ERRORS in velocity relative to exact solution:
 velocity  :  maxvector   prcntavvec      maxu      maxv       avu       avv
-                0.5119      0.02768    0.5119    0.0000    0.2701    0.0000
+                0.0778      0.00633    0.0778    0.0000    0.0618    0.0000
 NUM ERRORS DONE
 END-OF-OUTPUT
 
 if [ $? != 0 ];
 then
-    exit 1
+  cat ${output}
+  exit 1
 fi
 
-rm -f $files; exit 0
+exit 0

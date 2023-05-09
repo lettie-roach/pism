@@ -8,7 +8,7 @@ macro(pism_use_rpath)
   set (CMAKE_SKIP_BUILD_RPATH FALSE)
   # when building, don't use the install RPATH already
   # (but later on when installing)
-  set (CMAKE_BUILD_WITH_INSTALL_RPATH FALSE) 
+  set (CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
   # the RPATH to be used when installing
   set (CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${Pism_LIB_DIR}")
   # add the automatically determined parts of the RPATH
@@ -23,17 +23,20 @@ endmacro(pism_use_rpath)
 # Set CMake variables to disable rpath
 macro(pism_dont_use_rpath)
   set (CMAKE_SKIP_BUILD_RPATH TRUE)
-  set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE) 
+  set (CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
   set (CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${Pism_LIB_DIR}")
   set (CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 endmacro(pism_dont_use_rpath)
 
 # Set CMake variables to ensure that everything is static
 macro(pism_strictly_static)
+
+  if (BUILD_SHARED_LIBS)
+    message(FATAL_ERROR "Please set BUILD_SHARED_LIBS to OFF.")
+  endif()
+
   set (CMAKE_SKIP_RPATH ON CACHE BOOL "Disable RPATH completely")
   set (CMAKE_FIND_LIBRARY_SUFFIXES .a)
-
-  set (BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared Pism libraries" FORCE)
 
   set (CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "") # get rid of -rdynamic
   set (CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "") # ditto
@@ -51,10 +54,17 @@ macro(pism_set_revision_tag_git)
     if (EXISTS ${Pism_SOURCE_DIR}/.git)
       find_program (GIT_EXECUTABLE git DOC "Git executable")
       mark_as_advanced(GIT_EXECUTABLE)
-      execute_process (COMMAND ${GIT_EXECUTABLE} describe --always --match v?.?*
-        WORKING_DIRECTORY ${Pism_SOURCE_DIR}
-        OUTPUT_VARIABLE Pism_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
+      if (${Pism_BRANCH} MATCHES "stable")
+        execute_process (COMMAND ${GIT_EXECUTABLE} describe --always --match v?.?*
+          WORKING_DIRECTORY ${Pism_SOURCE_DIR}
+          OUTPUT_VARIABLE Pism_VERSION
+          OUTPUT_STRIP_TRAILING_WHITESPACE)
+      else()
+        execute_process (COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+          WORKING_DIRECTORY ${Pism_SOURCE_DIR}
+          OUTPUT_VARIABLE Pism_VERSION
+          OUTPUT_STRIP_TRAILING_WHITESPACE)
+      endif()
       execute_process (COMMAND ${GIT_EXECUTABLE} --no-pager log -1 "--pretty=format:committed by %an on %ci"
         WORKING_DIRECTORY ${Pism_SOURCE_DIR}
         OUTPUT_VARIABLE Pism_COMMIT_INFO
@@ -71,7 +81,7 @@ macro(pism_set_revision_tag)
 
   # Otherwise...
   if (NOT Pism_VERSION)
-    set (Pism_VERSION "no-version-control")
+    set (Pism_VERSION "v2.0.6")
   endif (NOT Pism_VERSION)
 
   set (Pism_REVISION_TAG "${Pism_BRANCH} ${Pism_VERSION}")
@@ -80,7 +90,7 @@ macro(pism_set_revision_tag)
 endmacro(pism_set_revision_tag)
 
 macro(pism_set_install_prefix)
-  # Allow setting a custom install prefix using the PISM_INSRALL_PREFIX environment variable.
+  # Allow setting a custom install prefix using the PISM_INSTALL_PREFIX environment variable.
   string (LENGTH "$ENV{PISM_INSTALL_PREFIX}" INSTALL_PREFIX_LENGTH)
   if (INSTALL_PREFIX_LENGTH)
     set (CMAKE_INSTALL_PREFIX $ENV{PISM_INSTALL_PREFIX} CACHE PATH "PISM install prefix" FORCE)
@@ -96,7 +106,7 @@ endmacro()
 
 # Set pedantic compiler flags
 macro(pism_set_pedantic_flags)
-  set (DEFAULT_PEDANTIC_FLAGS "-pedantic -Wall -Wextra -Wno-cast-qual -Wundef -Wshadow -Wpointer-arith -Wno-cast-align -Wwrite-strings -Wno-conversion -Wsign-compare -Wno-redundant-decls -Wno-inline -Wno-long-long -Wmissing-format-attribute -Wmissing-noreturn -Wpacked -Wdisabled-optimization -Wmultichar -Wformat-nonliteral -Wformat-security -Wformat-y2k -Wendif-labels -Winvalid-pch -Wmissing-field-initializers -Wvariadic-macros -Wstrict-aliasing -funit-at-a-time")
+  set (DEFAULT_PEDANTIC_FLAGS "-pedantic -Wall -Wextra -Wno-cast-qual -Wundef -Wshadow -Wpointer-arith -Wno-cast-align -Wwrite-strings -Wno-conversion -Wsign-compare -Wno-redundant-decls -Wno-inline -Wno-long-long -Wmissing-format-attribute -Wpacked -Wdisabled-optimization -Wmultichar -Wformat-nonliteral -Wformat-security -Wformat-y2k -Wendif-labels -Winvalid-pch -Wmissing-field-initializers -Wvariadic-macros -Wstrict-aliasing -funit-at-a-time -Wno-unknown-pragmas")
   set (DEFAULT_PEDANTIC_CFLAGS "${DEFAULT_PEDANTIC_FLAGS} -std=c99")
   set (DEFAULT_PEDANTIC_CXXFLAGS "${DEFAULT_PEDANTIC_FLAGS} -Woverloaded-virtual")
   set (PEDANTIC_CFLAGS ${DEFAULT_PEDANTIC_CFLAGS} CACHE STRING "Compiler flags to enable pedantic warnings")
@@ -134,12 +144,12 @@ macro(pism_find_prerequisites)
     set(Pism_PETSC_VERSION ${PETSC_VERSION} CACHE STRING "PETSc version")
     mark_as_advanced(Pism_PETSC_VERSION)
 
-    if (PETSC_VERSION VERSION_LESS 3.3)
+    if (PETSC_VERSION VERSION_LESS 3.5)
       # Force PISM to look for PETSc again if the version we just found
       # is too old:
       set(PETSC_CURRENT "OFF" CACHE BOOL "" FORCE)
       # Stop with an error message.
-      message(FATAL_ERROR "PISM requires PETSc version 3.3 or newer (found ${PETSC_VERSION}).")
+      message(FATAL_ERROR "PISM requires PETSc version 3.5 or newer (found ${PETSC_VERSION}).")
     endif()
 
     if (PETSC_VERSION VERSION_EQUAL 3.6.0)
@@ -153,39 +163,26 @@ macro(pism_find_prerequisites)
   endif (DEFINED PETSC_VERSION)
 
   # MPI
-  find_package (MPI REQUIRED)
+  find_package (MPI REQUIRED COMPONENTS C)
 
   # Other required libraries
   find_package (UDUNITS2 REQUIRED)
   find_package (GSL REQUIRED)
   find_package (NetCDF REQUIRED)
   find_package (FFTW REQUIRED)
+  find_package (HDF5 COMPONENTS C HL)
 
   # Optional libraries
   if (Pism_USE_PNETCDF)
     find_package (PNetCDF REQUIRED)
   endif()
 
-  if (Pism_USE_PARALLEL_HDF5)
-    find_package (HDF5 COMPONENTS C HL)
-
-    if(NOT HDF5_IS_PARALLEL)
-      set (Pism_USE_PARALLEL_HDF5 OFF CACHE BOOL "Enables parallel HDF5 I/O." FORCE)
-      message(FATAL_ERROR
-        "Selected HDF-5 library (include: ${HDF5_INCLUDE_DIR}, lib: ${HDF5_LIBRARIES}) does not support parallel I/O.")
-    endif()
+  if (Pism_USE_PROJ)
+    find_package (PROJ REQUIRED)
   endif()
 
-  if (Pism_USE_PROJ4)
-    find_package (PROJ4 REQUIRED)
-  endif()
-
-  # Use TAO included in PETSc 3.5.
-  if (Pism_PETSC_VERSION VERSION_LESS "3.5")
-    message(STATUS "Disabling TAO-based inversion tools. Install PETSc 3.5 or later to use them.")
-    set (Pism_USE_TAO OFF CACHE BOOL "Use TAO in inverse solvers." FORCE)
-  else()
-    message(STATUS "Building TAO-based inversion tools.")
+  if (Pism_USE_PIO)
+    find_package (ParallelIO REQUIRED)
   endif()
 
   if (Pism_USE_PARALLEL_NETCDF4)
@@ -217,7 +214,7 @@ macro(pism_find_prerequisites)
         LOG_BUILD ON
         LOG_CONFIGURE ON
         )
-      set(JANSSON_INCLUDE_DIRS ${pism_jansson_dir}/include CACHE STRING "Jansson include directory" OFRCE)
+      set(JANSSON_INCLUDE_DIRS ${pism_jansson_dir}/include CACHE STRING "Jansson include directory" FORCE)
       set(JANSSON_LIBRARIES "-L${pism_jansson_dir}/lib -ljansson" CACHE STRING "Jansson library" FORCE)
       set(Pism_BUILD_JANSSON ON CACHE BOOL "ON if we are using our own Jansson build." FORCE)
       message(WARNING "
@@ -232,11 +229,15 @@ endmacro()
 macro(pism_set_dependencies)
 
   # Set include and library directories for *required* libraries.
-  include_directories (
+  #
+  # Note: PISM does not use HDF5 directly, but we still need to be able to include hdf5.h
+  # to record its version.
+  include_directories (BEFORE
     ${PETSC_INCLUDES}
     ${FFTW_INCLUDES}
-    ${GSL_INCLUDES}
+    ${GSL_INCLUDE_DIRS}
     ${UDUNITS2_INCLUDES}
+    ${HDF5_INCLUDE_DIRS}
     ${NETCDF_INCLUDES}
     ${MPI_C_INCLUDE_PATH})
 
@@ -250,7 +251,9 @@ macro(pism_set_dependencies)
     ${FFTW_LIBRARIES}
     ${GSL_LIBRARIES}
     ${NETCDF_LIBRARIES}
-    ${MPI_C_LIBRARIES})
+    ${MPI_C_LIBRARIES}
+    ${HDF5_LIBRARIES}
+    ${HDF5_HL_LIBRARIES})
 
   # optional libraries
   if (Pism_USE_JANSSON)
@@ -258,22 +261,19 @@ macro(pism_set_dependencies)
     list (APPEND Pism_EXTERNAL_LIBS ${JANSSON_LIBRARIES})
   endif()
 
-  if (Pism_USE_PROJ4)
-    include_directories (${PROJ4_INCLUDES})
-    list (APPEND Pism_EXTERNAL_LIBS ${PROJ4_LIBRARIES})
+  if (Pism_USE_PROJ)
+    include_directories (${PROJ_INCLUDES})
+    list (APPEND Pism_EXTERNAL_LIBS ${PROJ_LIBRARIES})
+  endif()
+
+  if (Pism_USE_PIO)
+    include_directories (${ParallelIO_INCLUDES})
+    list (APPEND Pism_EXTERNAL_LIBS ${ParallelIO_LIBRARIES})
   endif()
 
   if (Pism_USE_PNETCDF)
     include_directories (${PNETCDF_INCLUDES})
     list (APPEND Pism_EXTERNAL_LIBS ${PNETCDF_LIBRARIES})
-  endif()
-
-  # Put HDF5 includes near the beginning of the list. (It is possible that the system has
-  # more than one HDF5 library installed--- one serial, built with NetCDF, and one parallel.
-  # We want to use the latter.)
-  if (Pism_USE_PARALLEL_HDF5)
-    include_directories (BEFORE ${HDF5_C_INCLUDE_DIR})
-    list (APPEND Pism_EXTERNAL_LIBS ${HDF5_LIBRARIES} ${HDF5_HL_LIBRARIES})
   endif()
 
   # Hide distracting CMake variables
@@ -299,6 +299,7 @@ show :
   execute_process (COMMAND ${MAKE_EXECUTABLE} --no-print-directory -f ${pism_petsc_config_makefile} show VARIABLE=${name}
     OUTPUT_VARIABLE ${var}
     RESULT_VARIABLE petsc_return)
+  string(CONFIGURE "\${${var}}" ${var} ESCAPE_QUOTES)
   file (REMOVE ${pism_petsc_config_makefile})
 endmacro (pism_petsc_get_variable)
 
@@ -312,15 +313,15 @@ macro(pism_check_petsc_scalar_type)
   endif()
 endmacro()
 
-# Set version information that will be embedded in output files.
-macro(pism_set_version_info)
-  pism_petsc_get_variable("CONFIGURE_OPTIONS" PISM_PETSC_CONFIGURE_FLAGS)
-  add_definitions("-DPISM_PETSC_CONFIGURE_FLAGS=\"${PISM_PETSC_CONFIGURE_FLAGS}\"")
-
-  add_definitions("-DPISM_CMAKE_VERSION=\"${CMAKE_VERSION}\"")
-
-  if (Pism_BUILD_PYTHON_BINDINGS)
-    add_definitions("-DPISM_SWIG_VERSION=\"${SWIG_VERSION}\"")
-    add_definitions("-DPISM_PETSC4PY_VERSION=\"${PETSC4PY_VERSION}\"")
-  endif()
-endmacro()
+# Create a list of subdirectories.
+# See https://stackoverflow.com/questions/7787823/cmake-how-to-get-the-name-of-all-subdirectories-of-a-directory
+MACRO(SUBDIRLIST result curdir)
+  FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
+  SET(dirlist "")
+  FOREACH(child ${children})
+    IF(IS_DIRECTORY ${curdir}/${child})
+      LIST(APPEND dirlist ${child})
+    ENDIF()
+  ENDFOREACH()
+  SET(${result} ${dirlist})
+ENDMACRO()

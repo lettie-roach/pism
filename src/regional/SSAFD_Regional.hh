@@ -1,4 +1,4 @@
-/* Copyright (C) 2015 PISM Authors
+/* Copyright (C) 2015, 2016, 2017, 2019, 2020, 2021 PISM Authors
  *
  * This file is part of PISM.
  *
@@ -20,7 +20,7 @@
 #ifndef _SSAFD_REGIONAL_H_
 #define _SSAFD_REGIONAL_H_
 
-#include "base/stressbalance/ssa/SSAFD.hh"
+#include "pism/stressbalance/ssa/SSAFD.hh"
 
 namespace pism {
 
@@ -30,11 +30,24 @@ namespace stressbalance {
 //! simulations.
 class SSAFD_Regional : public SSAFD {
 public:
-  SSAFD_Regional(IceGrid::ConstPtr g, EnthalpyConverter::Ptr e);
-  virtual ~SSAFD_Regional();
+  SSAFD_Regional(IceGrid::ConstPtr g);
+  virtual ~SSAFD_Regional() = default;
   virtual void init();
-  virtual void compute_driving_stress(IceModelVec2V &taud);
+  virtual void compute_driving_stress(const IceModelVec2S &ice_thickness,
+                                      const IceModelVec2S &surface_elevation,
+                                      const IceModelVec2CellType &cell_type,
+                                      const IceModelVec2Int *no_model_mask,
+                                      IceModelVec2V &result) const;
+
+private:
+  void update(const Inputs &inputs, bool full_update);
+
+  const IceModelVec2S   *m_h_stored;
+  const IceModelVec2S   *m_H_stored;
+  const IceModelVec2Int *m_no_model_mask;
 };
+
+SSA * SSAFD_RegionalFactory(IceGrid::ConstPtr grid);
 
 } // end of namespace stressbalance
 

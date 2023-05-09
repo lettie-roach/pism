@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2011-2014 the PISM authors
+# Copyright (C) 2011-2014, 2017, 2019, 2021 the PISM authors
 
 # downloads SeaRISE "1km Greenland data set" NetCDF file,
 # adjusts metadata, saves under new name with fields needed
@@ -30,21 +30,21 @@ ncwa -O -a t $WORKING $WORKING
 echo "adding lat and lon fields by using nc2cdo.py (which is in pism/util/)"
 nc2cdo.py $WORKING
 
-# create usurf, needed by regional-tools not pismo
+# create usurf, needed by regional-tools not pism
 ncap2 -O -s 'usurf=thk+topg' $WORKING $WORKING
 ncap2 -O -s 'where(usurf<0.0) usurf=0.0' $WORKING $WORKING
 ncatted -a standard_name,usurf,d,, $WORKING # remove it
-ncatted -O -a units,usurf,a,c,"m" $WORKING
-ncatted -O -a long_name,usurf,a,c,"ice surface elevation" $WORKING
+ncatted -O -a units,usurf,o,c,"m" $WORKING
+ncatted -O -a long_name,usurf,o,c,"ice surface elevation" $WORKING
 
 echo "copying geometry fields for boundary conditions in no_model area..."
-# create fields thkstore and usrfstore so that pismo is able to appropriately
+# create fields thkstore and usrfstore so that pism is able to appropriately
 # assign Dirichlet b.c. for surface gradient & driving stress
-ncap -O -s "usurfstore=1.0*usurf" $WORKING $WORKING
+ncap2 -O -s "usurfstore=1.0*usurf" $WORKING $WORKING
 ncatted -a standard_name,usurfstore,d,, $WORKING # remove it
 ncatted -O -a units,usurfstore,a,c,"m" $WORKING
 ncatted -O -a long_name,usurfstore,a,c,"stored ice surface elevation (for regional b.c.)" $WORKING
-ncap -O -s "thkstore=1.0*thk" $WORKING $WORKING
+ncap2 -O -s "thkstore=1.0*thk" $WORKING $WORKING
 ncatted -a standard_name,thkstore,d,, $WORKING # remove it
 ncatted -O -a units,thkstore,a,c,"m" $WORKING
 ncatted -O -a long_name,thkstore,a,c,"stored ice thickness (for regional b.c.)" $WORKING
@@ -67,9 +67,10 @@ ncrename -O -v airtemp2m,ice_surface_temp $CLIMATEFILE
 ncatted -O -a units,ice_surface_temp,a,c,"Celsius" $CLIMATEFILE
 # convert SMB from liquid water equivalent thickness per year to [kg m-2 year-1];
 # assume water density of 1000.0 [kg m-3]
-ncap -O -s "climatic_mass_balance=1000.0*smb" $CLIMATEFILE $CLIMATEFILE
-ncatted -O -a standard_name,climatic_mass_balance,a,c,"land_ice_surface_specific_mass_balance_flux" $CLIMATEFILE
-ncatted -O -a units,climatic_mass_balance,a,c,"kg m-2 year-1" $CLIMATEFILE
+ncap2 -O -s "climatic_mass_balance=1000.0*smb" \
+      -s 'climatic_mass_balance@standard_name="land_ice_surface_specific_mass_balance_flux"' \
+      -s 'climatic_mass_balance@units="kg m-2 year-1"' \
+      $CLIMATEFILE $CLIMATEFILE
 ncks -O -x -v smb $CLIMATEFILE $CLIMATEFILE
 echo "... done"
 echo
@@ -77,13 +78,13 @@ echo
 
 # get locally-generated or pre-computed PISM result
 echo "checking for locally-generated, or fetching, pre-computed PISM whole ice-sheet result on 5km grid"
-URL=http://www.pism-docs.org/download
+URL=https://raw.githubusercontent.com/pism/example-inputs/main/jako/
 WHOLE=g5km_gridseq.nc
 wget -nc ${URL}/$WHOLE
 BCFILE=g5km_bc.nc
 echo "creating PISM-readable boundary conditions file $BCFILE from whole ice sheet result ..."
 ncks -O -v u_ssa,v_ssa,bmelt,tillwat,enthalpy,litho_temp $WHOLE $BCFILE
-# rename u_ssa and v_ssa so that they are specified as b.c.
-ncrename -O -v u_ssa,u_ssa_bc -v v_ssa,v_ssa_bc $BCFILE
+# rename bmelt and u_ssa and v_ssa so that they are used as b.c.
+ncrename -O -v bmelt,basal_melt_rate_grounded -v u_ssa,u_bc -v v_ssa,v_bc $BCFILE
 echo "... done"
 echo

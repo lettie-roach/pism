@@ -1,5 +1,5 @@
-#!/usr/bin/env python
-# Copyright (C) 2011, 2013, 2014, 2016 Torsten Albrecht and Moritz Huetten
+#!/usr/bin/env python3
+# Copyright (C) 2011, 2013, 2014, 2016, 2018, 2021 Torsten Albrecht and Moritz Huetten
 
 # ./createSetup_flowline.py -a 0.0 -r 10.0
 
@@ -10,7 +10,7 @@ import numpy as np
 try:
     from netCDF4 import Dataset as NC
 except:
-    print "netCDF4 is not installed!"
+    print("netCDF4 is not installed!")
     sys.exit(1)
 
 # geometry setup flowline
@@ -27,7 +27,7 @@ try:
         if opt in ("-r", "--resolution"):  # resolution in km
             boxWidth = arg
 except getopt.GetoptError:
-    print 'Incorrect command line arguments'
+    print('Incorrect command line arguments')
     sys.exit(2)
 
 
@@ -56,8 +56,7 @@ command-line options. (We try to use command-line options whenever we can.)
 filename = "flowline_config.nc"
 nc = NC(filename, 'w', format="NETCDF3_CLASSIC")
 var = nc.createVariable("pism_overrides", 'i')
-attrs = {"ocean.always_grounded": "no",
-         "geometry.update.use_basal_melt_rate": "no",
+attrs = {"geometry.update.use_basal_melt_rate": "no",
          "stress_balance.ssa.compute_surface_gradient_inward": "no",
          "flow_law.isothermal_Glen.ice_softness": (B0) ** -3,
          "constants.ice.density": rho_ice,
@@ -66,10 +65,10 @@ attrs = {"ocean.always_grounded": "no",
          "stress_balance.ssa.Glen_exponent": 3.0,
          "constants.standard_gravity": standard_gravity,
          "ocean.sub_shelf_heat_flux_into_ice": 0.0,
-         "stress_balance.sia.bed_smoother_range": 0.0,
+         "stress_balance.sia.bed_smoother.range": 0.0,
          }
 
-for name, value in attrs.iteritems():
+for name, value in attrs.items():
     var.setncattr(name, value)
 nc.close()
 
@@ -93,21 +92,21 @@ ice_surface_temp = np.zeros((ny, nx))
 precip = np.zeros((ny, nx))
 
 
-print "Informations from createSetup_flowline.py:"
-print "grid size (pixel):"
-print ny
-print nx
-print "grid size center:"
-print nxcenter
-print nycenter
+print("Informations from createSetup_flowline.py:")
+print("grid size (pixel):")
+print(ny)
+print(nx)
+print("grid size center:")
+print(nxcenter)
+print(nycenter)
 
-print "domain range in meters:"
-print "x-dir:"
-print x[0]
-print x[nx - 1]
-print "y-dir:"
-print y[0]
-print y[ny - 1]
+print("domain range in meters:")
+print("x-dir:")
+print(x[0])
+print(x[nx - 1])
+print("y-dir:")
+print(y[0])
+print(y[ny - 1])
 
 
 thickness = 600.0  # initial ice thickness in meters
@@ -117,7 +116,7 @@ xfront = 700.0  # x-position of fixed calving front in km
 distbc = 50.0  # km
 igl = int(np.floor(distbc / boxWidth))
 vel_bc = 300  # m/yr
-bc_mask = np.zeros((ny, nx))
+vel_bc_mask = np.zeros((ny, nx))
 ubar = np.zeros((ny, nx))
 vbar = np.zeros((ny, nx))
 
@@ -163,7 +162,7 @@ for i in range(0, nx):
         if i <= igl:
             ubar[j, i] = vel_bc / secpera
             vbar[j, i] = 0.0
-            bc_mask[j, i] = 1.0
+            vel_bc_mask[j, i] = 1.0
 
 
 ##### define dimensions in NetCDF file #####
@@ -204,24 +203,24 @@ vars = {'y':   	['m',
                                   'land_ice_surface_specific_mass_balance_flux',
                                   0.2 * 910.0,
                                   precip],
-        'bc_mask': ['',
-                    'bc_mask',
-                    'bc_mask',
-                    0.0,
-                    bc_mask],
-        'u_ssa_bc': ['m s-1',
-                     'X-component of the SSA velocity boundary conditions',
-                     'ubar',
-                     0.0,
-                     ubar],
-        'v_ssa_bc': ['m s-1',
-                     'Y-component of the SSA velocity boundary conditions',
-                     'vbar',
-                     0.0,
-                     vbar],
+        'vel_bc_mask': ['',
+                        'vel_bc_mask',
+                        'vel_bc_mask',
+                        0.0,
+                        vel_bc_mask],
+        'u_bc': ['m s-1',
+                 'X-component of the SSA velocity boundary conditions',
+                 'ubar',
+                 0.0,
+                 ubar],
+        'v_bc': ['m s-1',
+                 'Y-component of the SSA velocity boundary conditions',
+                 'vbar',
+                 0.0,
+                 vbar],
         }
 
-for name in vars.keys():
+for name in list(vars.keys()):
     [_, _, _, fill_value, data] = vars[name]
     if name in ['x', 'y']:
         var = ncfile.createVariable(name, 'f4', (name,))
@@ -234,5 +233,5 @@ for name in vars.keys():
 
 # finish up
 ncfile.close()
-print "NetCDF file ", WRIT_FILE, " created"
-print ''
+print("NetCDF file ", WRIT_FILE, " created")
+print('')

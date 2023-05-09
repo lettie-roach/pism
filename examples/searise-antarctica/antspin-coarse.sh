@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2009-2015  PISM authors
+# Copyright (C) 2009-2018  PISM authors
 ##################################################################################
 # Coarse grid spinup of Antarctic ice sheet model using data from Anne Le Brocq
 # (see SeaRISE wiki).  Uses PIK physics and enthalpy model
@@ -23,7 +23,7 @@ echo "$SCRIPTNAME   Run as './antspinCC.sh NN' for NN procs and 30km grid"
 # naming files, directories, executables
 RESDIR=
 BOOTDIR=
-PISM_EXEC=pismr
+PISM_EXEC=${PISM_EXEC:=pismr}
 PISM_MPIDO="mpiexec -n "
 
 # input data:
@@ -68,7 +68,7 @@ RUNTIME=1
 echo
 echo "$SCRIPTNAME  bootstrapping on $GRIDNAME grid plus SIA run for $RUNTIME a"
 cmd="$PISM_MPIDO $NN $PISM_EXEC -skip -skip_max $SKIP -i ${INNAME} -bootstrap $GRID \
-	$SIA_ENHANCEMENT $PIKPHYS_COUPLING -calving ocean_kill -ocean_kill_file ${INNAME} \
+	$SIA_ENHANCEMENT $PIKPHYS_COUPLING -front_retreat_file ${INNAME} \
 	-y $RUNTIME -o $RESNAMEONE"
 $DO $cmd
 #exit # <-- uncomment to stop here
@@ -79,7 +79,7 @@ RUNTIME=100
 echo
 echo "$SCRIPTNAME  short SIA run for $RUNTIME a"
 cmd="$PISM_MPIDO $NN $PISM_EXEC -skip -skip_max $SKIP -i $RESNAMEONE \
-	$SIA_ENHANCEMENT $PIKPHYS_COUPLING -calving ocean_kill -ocean_kill_file $RESNAMEONE \
+	$SIA_ENHANCEMENT $PIKPHYS_COUPLING -front_retreat_file ${INNAME} \
 	-y $RUNTIME -o $RESNAME"
 $DO $cmd
 
@@ -113,12 +113,12 @@ RESNAME=${RESDIR}${stage}_${GRIDNAME}.nc
 TSNAME=${RESDIR}ts_${stage}_${GRIDNAME}.nc
 RUNTIME=100000
 EXTRANAME=${RESDIR}extra_${stage}_${GRIDNAME}.nc
-exvars="thk,usurf,velbase_mag,velbar_mag,mask,diffusivity,tauc,bmelt,tillwat,temppabase,hardav,Href,gl_mask"
+exvars="thk,usurf,velbase_mag,velbar_mag,mask,diffusivity,tauc,bmelt,tillwat,temppabase,hardav,cell_grounded_fraction,ice_area_specific_volume,amount_fluxes,basal_mass_flux_grounded,basal_mass_flux_floating"
 expackage="-extra_times 0:1000:$RUNTIME -extra_vars $exvars"
 
 echo
 echo "$SCRIPTNAME  run into steady state with constant climate forcing for $RUNTIME a"
-cmd="$PISM_MPIDO $NN $PISM_EXEC -skip -skip_max $SKIP -i $INNAME \
+cmd="$PISM_MPIDO $NN $PISM_EXEC -bootstrap -Lz 5000 -skip -skip_max $SKIP -i $INNAME \
     $SIA_ENHANCEMENT $PIKPHYS_COUPLING $PIKPHYS $FULLPHYS \
     -ys 0 -y $RUNTIME \
     -ts_file $TSNAME -ts_times 0:1:$RUNTIME \
@@ -128,4 +128,3 @@ $DO $cmd
 
 echo
 echo "$SCRIPTNAME  coarse-grid part of spinup done"
-

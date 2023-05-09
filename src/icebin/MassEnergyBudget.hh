@@ -3,8 +3,8 @@
 // --------------------------------
 // PISM Includes... want to be included first
 #include <petsc.h>
-#include <base/util/IceGrid.hh>
-#include <base/util/iceModelVec.hh>
+#include <pism/util/IceGrid.hh>
+#include <pism/util/iceModelVec.hh>
 // --------------------------------
 
 namespace pism {
@@ -21,9 +21,8 @@ struct MassEnthVec2S : public pism::PetscAccessible
 
     ~MassEnthVec2S() {}
 
-    void create(pism::IceGrid::ConstPtr my_grid, const std::string &my_name,
-        pism::IceModelVecKind ghostedp, int width = 1);
-
+    MassEnthVec2S(pism::IceGrid::ConstPtr my_grid, const std::string &my_name,
+                  pism::IceModelVecKind ghostedp, int width = 1);
 
     void set_attrs(
         const std::string &my_pism_intent,
@@ -179,11 +178,8 @@ protected:
 
 public:
 
-
-    MassEnergyBudget();
-
-    void create(pism::IceGrid::ConstPtr grid, std::string const &prefix,
-        pism::IceModelVecKind ghostedp, unsigned int width = 1);
+    MassEnergyBudget(pism::IceGrid::ConstPtr grid, std::string const &prefix,
+                     pism::IceModelVecKind ghostedp, unsigned int width = 1);
 
     void set_epsilon(pism::IceGrid::ConstPtr grid);
 };

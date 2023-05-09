@@ -1,152 +1,117 @@
-# A patch by Tristan Carel that will be included in the next release of CMake
-# Downloaded from http://www.itk.org/Bug/view.php?id=4147&nbn=4
-
-#
-# Get dependencies of the generated wrapper.
-#
-MACRO(SWIG_GET_WRAPPER_DEPENDENCIES swigFile genWrapper language DEST_VARIABLE)
-  GET_FILENAME_COMPONENT(swig_getdeps_basename ${swigFile} NAME_WE)
-  GET_FILENAME_COMPONENT(swig_getdeps_outdir ${genWrapper} PATH)
-  GET_SOURCE_FILE_PROPERTY(swig_getdeps_extra_flags "${swigFile}" SWIG_FLAGS)
-  IF("${swig_getdeps_extra_flags}" STREQUAL "NOTFOUND")
-    SET(swig_getdeps_extra_flags "")
-  ENDIF("${swig_getdeps_extra_flags}" STREQUAL "NOTFOUND")
-
-  IF(NOT swig_getdeps_outdir)
-    SET(swig_getdeps_outdir ${CMAKE_CURRENT_BINARY_DIR})
-  ENDIF(NOT swig_getdeps_outdir)
-  SET(swig_getdeps_depsfile
-    ${swig_getdeps_outdir}/swig_${swig_getdeps_basename}_deps.txt)
-  GET_DIRECTORY_PROPERTY(swig_getdeps_include_directories INCLUDE_DIRECTORIES)
-  SET(swig_getdeps_include_dirs)
-  FOREACH(it ${swig_getdeps_include_directories})
-    SET(swig_getdeps_include_dirs ${swig_getdeps_include_dirs} "-I${it}")
-  ENDFOREACH(it)
-  EXECUTE_PROCESS(
-    COMMAND ${SWIG_EXECUTABLE}
-    -MM -MF ${swig_getdeps_depsfile} ${swig_getdeps_extra_flags}
-    ${CMAKE_SWIG_FLAGS} -${language}
-    -o ${genWrapper} ${swig_getdeps_include_dirs} ${swigFile}
-    RESULT_VARIABLE swig_getdeps_result
-    ERROR_VARIABLE swig_getdeps_error
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-  IF(NOT ${swig_getdeps_error} EQUAL 0)
-    MESSAGE(SEND_ERROR "Command \"${SWIG_EXECUTABLE} -MM -MF ${swig_getdeps_depsfile} ${swig_getdeps_extra_flags} ${CMAKE_SWIG_FLAGS} -${language} -o ${genWrapper} ${swig_getdeps_include_dirs} ${swigFile}\" failed with output:\n${swig_getdeps_error}")
-    SET(swig_getdeps_dependencies "")
-  ELSE(NOT ${swig_getdeps_error} EQUAL 0)
-    FILE(READ ${swig_getdeps_depsfile} ${DEST_VARIABLE})
-    # Remove the first line
-    STRING(REGEX REPLACE "^.+: +\\\\\n +" ""
-      ${DEST_VARIABLE} "${${DEST_VARIABLE}}")
-    # Clean the end of each line
-    STRING(REGEX REPLACE " +(\\\\)?\n" "\n" ${DEST_VARIABLE}
-      "${${DEST_VARIABLE}}")
-    # Clean beginning of each line
-    STRING(REGEX REPLACE "\n +" "\n"
-      ${DEST_VARIABLE} "${${DEST_VARIABLE}}")
-    # clean paths
-    STRING(REGEX REPLACE "\\\\\\\\" "/" ${DEST_VARIABLE}
-      "${${DEST_VARIABLE}}")
-    STRING(REGEX REPLACE "\n" ";"
-      ${DEST_VARIABLE} "${${DEST_VARIABLE}}")
-  ENDIF(NOT ${swig_getdeps_error} EQUAL 0)
-ENDMACRO(SWIG_GET_WRAPPER_DEPENDENCIES)
-
 if (Pism_BUILD_PYTHON_BINDINGS)
-    include(${SWIG_USE_FILE})
 
-    include_directories (. ${PETSC4PY_INCLUDES} ${PYTHON_INCLUDES})
-    
-    set(PISM_PYTHON_BINDING_LIBRARIES "pism")
+  if (NOT (${CMAKE_VERSION} VERSION_LESS "3.13"))
+    # Policy CMP0078 was introduced in 3.13. See "cmake --help-policies" for details.
+    cmake_policy(SET CMP0078 NEW)       #controls names of SWIG targets
+  endif()
 
-    # Get module dependencies:
-    SWIG_GET_WRAPPER_DEPENDENCIES("${CMAKE_CURRENT_SOURCE_DIR}/PISM.i" "." python PISM_Python_deps)
+  include(${SWIG_USE_FILE})
 
-    list(APPEND PISM_Python_deps
-      petsc_version.i
-      pism_ColumnSystem.i
-      pism_IceGrid.i
-      pism_IceModelVec.i
-      pism_PIO.i
-      pism_SIA.i
-      pism_SSA.i
-      pism_Timeseries.i
-      pism_Vars.i
-      pism_exception.i
-      pism_inverse.i
-      pism_options.i
-      )
+  include_directories (. ${PETSC4PY_INCLUDES} ${PYTHON_INCLUDE_DIRS} ${Pism_SOURCE_DIR}/src)
 
-    if(Pism_USE_TAO)
-      set_property(SOURCE PISM.i PROPERTY SWIG_FLAGS "-DPISM_USE_TAO" APPEND)
-    endif()
+  set(PISM_PYTHON_BINDING_LIBRARIES "pism")
 
-    if(Pism_USE_JANSSON)
-      set_property(SOURCE PISM.i PROPERTY SWIG_FLAGS "-DPISM_USE_JANSSON" APPEND)
-    endif()
-
-    set_source_files_properties(PISM.i PROPERTIES
-      CPLUSPLUS ON
-      SWIG_MODULE_NAME cpp)
-
-    # has to be set *before* calling SWIG_ADD_MODULE
-    set(SWIG_MODULE_cpp_EXTRA_DEPS ${PISM_Python_deps})
-    
-    SWIG_ADD_MODULE(cpp python PISM.i pism_python.cc)
-    SWIG_LINK_LIBRARIES(cpp ${PYTHON_LIBRARY} ${PISM_PYTHON_BINDING_LIBRARIES})
-
-    # Disable compiler warnings:
-    SET_SOURCE_FILES_PROPERTIES(${swig_generated_file_fullname}
-      PROPERTIES COMPILE_FLAGS "-w")
-
-    SWIG_ADD_MODULE(petsc_version python petsc_version.i petsc_version.cc)
-    SWIG_LINK_LIBRARIES(petsc_version ${PYTHON_LIBRARY})
-
-    # Disable compiler warnings:
-    SET_SOURCE_FILES_PROPERTIES(${swig_generated_file_fullname}
-      PROPERTIES COMPILE_FLAGS "-w")
-
-    get_target_property(SWIG_cpp_LOCATION ${SWIG_MODULE_cpp_REAL_NAME} LOCATION)
-    get_target_property(SWIG_petsc_version_LOCATION ${SWIG_MODULE_petsc_version_REAL_NAME} LOCATION)
-
-    # Install Python .py files
-    install(FILES
-      ${SWIG_cpp_LOCATION}
-      ${SWIG_petsc_version_LOCATION}
-      ${CMAKE_CURRENT_BINARY_DIR}/cpp.py
-      ${CMAKE_CURRENT_BINARY_DIR}/petsc_version.py
-      DESTINATION ${PISM_INSTALL_PYTHON_MODULE_DIR}/PISM
-      COMPONENT RuntimeLibraries
+  list(APPEND PISM_Python_deps
+    AgeModel.i
+    geometry.i
+    pism_BedDef.i
+    pism_ColumnSystem.i
+    pism_DM.i
+    pism_FlowLaw.i
+    pism_Hydrology.i
+    pism_IceGrid.i
+    pism_IceModelVec.i
+    pism_File.i
+    pism_SIA.i
+    pism_SSA.i
+    pism_blatter.i
+    pism_VariableMetadata.i
+    pism_Vars.i
+    pism_Vec.i
+    pism_atmosphere.i
+    pism_energy.i
+    pism_exception.i
+    pism_inverse.i
+    pism_ocean.i
+    pism_options.i
+    pism_surface.i
+    pism_verification.i
+    pism_frontalmelt.i
+    pism_calving.i
     )
 
-add_custom_target (install_python_bindings_in_the_build_directory ALL
-  COMMAND ${CMAKE_COMMAND} -E copy ${SWIG_cpp_LOCATION} ${CMAKE_BINARY_DIR}/site-packages/PISM
-  COMMAND ${CMAKE_COMMAND} -E copy ${SWIG_petsc_version_LOCATION} ${CMAKE_BINARY_DIR}/site-packages/PISM/
-  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/cpp.py ${CMAKE_BINARY_DIR}/site-packages/PISM/
-  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/petsc_version.py ${CMAKE_BINARY_DIR}/site-packages/PISM/
-  VERBATIM
-  DEPENDS ${SWIG_MODULE_cpp_REAL_NAME}  _petsc_version install_site_packages_in_the_build_directory )
+  set_property(SOURCE PISM.i PROPERTY SWIG_FLAGS "-I${CMAKE_BINARY_DIR}" APPEND)
 
-configure_file(${Pism_SOURCE_DIR}/test/pylintrc pylintrc)
-add_custom_target (install_python_bindings_in_the_source_directory ALL
-  COMMAND ${CMAKE_COMMAND} -E copy ${SWIG_cpp_LOCATION} ${Pism_SOURCE_DIR}/site-packages/PISM
-  COMMAND ${CMAKE_COMMAND} -E copy ${SWIG_petsc_version_LOCATION} ${Pism_SOURCE_DIR}/site-packages/PISM/
-  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/cpp.py ${Pism_SOURCE_DIR}/site-packages/PISM/
-  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/petsc_version.py ${Pism_SOURCE_DIR}/site-packages/PISM/
-  VERBATIM
-  DEPENDS ${SWIG_MODULE_cpp_REAL_NAME}  _petsc_version)
-add_custom_target (pylint
-  COMMAND pylint --rcfile=${CMAKE_CURRENT_BINARY_DIR}/pylintrc ${Pism_SOURCE_DIR}/site-packages/PISM
-  VERBATIM
-  DEPENDS install_python_bindings_in_the_source_directory
-)
+  if(Pism_USE_JANSSON)
+    set_property(SOURCE PISM.i PROPERTY SWIG_FLAGS "-DPism_USE_JANSSON=1" APPEND)
+  else()
+    set_property(SOURCE PISM.i PROPERTY SWIG_FLAGS "-DPism_USE_JANSSON=0" APPEND)
+  endif()
 
-# The Python code snippet below returns 1 if Python can import a PISM
-# and if the directory of said PISM matches the place we are about to
-# install PISM's Python wrappers. If the return value is not 1, we
-# print a message stating how to set your PYTHONPATH.
-set (pism_test_py "${PROJECT_BINARY_DIR}/pism_test.py")
-file (WRITE "${pism_test_py}" "
+  set_source_files_properties(PISM.i PROPERTIES
+    CPLUSPLUS ON
+    SWIG_MODULE_NAME cpp)
+
+  # has to be set *before* calling SWIG_ADD_MODULE
+  set(SWIG_MODULE_cpp_EXTRA_DEPS ${PISM_Python_deps})
+
+  if (${CMAKE_VERSION} VERSION_LESS "3.8.0")
+    SWIG_ADD_MODULE(cpp python PISM.i pism_python.cc)
+  else()
+    SWIG_ADD_LIBRARY(cpp
+      LANGUAGE python
+      SOURCES PISM.i pism_python.cc)
+  endif()
+  SWIG_LINK_LIBRARIES(cpp ${PYTHON_LIBRARIES} ${PISM_PYTHON_BINDING_LIBRARIES})
+
+  # Disable compiler warnings:
+  SET_SOURCE_FILES_PROPERTIES(${swig_generated_file_fullname}
+    PROPERTIES COMPILE_FLAGS "-w")
+
+  add_custom_target (clean_swig
+    COMMAND ${CMAKE_COMMAND} -E touch PISM.i
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    VERBATIM)
+
+  # Disable compiler warnings:
+  SET_SOURCE_FILES_PROPERTIES(${swig_generated_file_fullname}
+    PROPERTIES COMPILE_FLAGS "-w")
+
+  # Generate version_info.py to make PETSc's version information available to PISM's
+  # Python bindings. This is necessary to initialize petsc4py using the correct PETSC_ARCH
+  # value *before* importing PISM.cpp.
+  configure_file(version_info.py.in version_info.py ESCAPE_QUOTES)
+
+  if(${CMAKE_VERSION} VERSION_LESS "3.13")
+    set(TARGET_FILE $<TARGET_FILE:_cpp>)
+    set(CPP_REAL_NAME ${SWIG_MODULE_cpp_REAL_NAME})
+  else()
+    set(TARGET_FILE $<TARGET_FILE:cpp>)
+    set(CPP_REAL_NAME cpp)
+  endif()
+
+  # Install Python .py files
+  install(FILES
+    ${TARGET_FILE}
+    ${CMAKE_CURRENT_BINARY_DIR}/cpp.py
+    ${CMAKE_CURRENT_BINARY_DIR}/version_info.py
+    DESTINATION ${PISM_INSTALL_PYTHON_MODULE_DIR}/PISM
+    COMPONENT RuntimeLibraries
+    )
+
+  add_custom_target (install_python_bindings_in_the_build_directory ALL
+    COMMAND ${CMAKE_COMMAND} -E copy ${TARGET_FILE} ${CMAKE_BINARY_DIR}/site-packages/PISM
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/cpp.py ${CMAKE_BINARY_DIR}/site-packages/PISM/
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/version_info.py ${CMAKE_BINARY_DIR}/site-packages/PISM/
+    VERBATIM
+    DEPENDS ${CPP_REAL_NAME} install_site_packages_in_the_build_directory )
+
+  # The Python code snippet below returns 1 if Python can import a PISM
+  # and if the directory of said PISM matches the place we are about to
+  # install PISM's Python wrappers. If the return value is not 1, we
+  # print a message stating how to set your PYTHONPATH.
+  set (pism_test_py "${PROJECT_BINARY_DIR}/pism_test.py")
+  file (WRITE "${pism_test_py}" "
 from os.path import realpath, join
 try:
     import PISM
@@ -157,7 +122,7 @@ if realpath(PISM.__file__) == realpath(join('${PISM_INSTALL_PYTHON_MODULE_DIR}',
     exit(1)
 ")
 
-install(CODE "EXEC_PROGRAM( ${PYTHON_EXECUTABLE} ARGS ${pism_test_py} RETURN_VALUE PISM_PYTHON_MATCHES OUTPUT_VARIABLE PYTHON_OUT )
+  install(CODE "EXEC_PROGRAM( ${PYTHON_EXECUTABLE} ARGS ${pism_test_py} RETURN_VALUE PISM_PYTHON_MATCHES OUTPUT_VARIABLE PYTHON_OUT )
 if(NOT PISM_PYTHON_MATCHES)
     MESSAGE(\"\n   ATTENTION! To complete installation of Python bindings you need to add\n\n   export PYTHONPATH=${PISM_INSTALL_PYTHON_MODULE_DIR}:\$PYTHONPATH\n\n   to your .bashrc or equivalent. \")
 endif()

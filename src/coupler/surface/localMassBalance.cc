@@ -1,4 +1,4 @@
-// Copyright (C) 2009, 2010, 2011, 2013, 2014, 2015, 2016 Ed Bueler and Constantine Khroulev and Andy Aschwanden
+// Copyright (C) 2009, 2010, 2011, 2013, 2014, 2015, 2016, 2017, 2018, 2020, 2022 Ed Bueler and Constantine Khroulev and Andy Aschwanden
 //
 // This file is part of PISM.
 //
@@ -16,21 +16,30 @@
 // along with PISM; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+#include <cassert>
 #include <ctime>  // for time(), used to initialize random number gen
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_math.h>       // M_PI
 #include <cmath>                // for erfc() in CalovGreveIntegrand()
-#include <cassert>
 #include <algorithm>
 
-#include "base/util/pism_const.hh"
-#include "base/util/PISMConfigInterface.hh"
+#include "pism/util/pism_utilities.hh"
+#include "pism/util/ConfigInterface.hh"
 #include "localMassBalance.hh"
-#include "base/util/IceGrid.hh"
+#include "pism/util/IceGrid.hh"
+#include "pism/util/Context.hh"
 
 namespace pism {
 namespace surface {
+
+LocalMassBalance::Changes::Changes() {
+  firn_depth    = 0.0;
+  snow_depth    = 0.0;
+  melt          = 0.0;
+  runoff        = 0.0;
+  smb           = 0.0;
+}
 
 LocalMassBalance::LocalMassBalance(Config::ConstPtr myconfig, units::System::Ptr system)
   : m_config(myconfig), m_unit_system(system),
@@ -38,13 +47,19 @@ LocalMassBalance::LocalMassBalance(Config::ConstPtr myconfig, units::System::Ptr
   // empty
 }
 
+std::string LocalMassBalance::method() const {
+  return m_method;
+}
+
 PDDMassBalance::PDDMassBalance(Config::ConstPtr config, units::System::Ptr system)
   : LocalMassBalance(config, system) {
-  precip_as_snow     = m_config->get_boolean("surface.pdd.interpret_precip_as_snow");
-  Tmin               = m_config->get_double("surface.pdd.air_temp_all_precip_as_snow");
-  Tmax               = m_config->get_double("surface.pdd.air_temp_all_precip_as_rain");
-  pdd_threshold_temp = m_config->get_double("surface.pdd.positive_threshold_temp");
-  refreeze_ice_melt  = m_config->get_boolean("surface.pdd.refreeze_ice_melt");
+  precip_as_snow     = m_config->get_flag("surface.pdd.interpret_precip_as_snow");
+  Tmin               = m_config->get_number("surface.pdd.air_temp_all_precip_as_snow");
+  Tmax               = m_config->get_number("surface.pdd.air_temp_all_precip_as_rain");
+  pdd_threshold_temp = m_config->get_number("surface.pdd.positive_threshold_temp");
+  refreeze_ice_melt  = m_config->get_flag("surface.pdd.refreeze_ice_melt");
+
+  m_method = "an expectation integral";
 }
 
 
@@ -52,7 +67,7 @@ PDDMassBalance::PDDMassBalance(Config::ConstPtr config, units::System::Ptr syste
     precipitation time-series.
  */
 unsigned int PDDMassBalance::get_timeseries_length(double dt) {
-  const unsigned int    NperYear = static_cast<unsigned int>(m_config->get_double("surface.pdd.max_evals_per_year"));
+  const unsigned int    NperYear = static_cast<unsigned int>(m_config->get_number("surface.pdd.max_evals_per_year"));
   const double dt_years = units::convert(m_unit_system, dt, "seconds", "years");
 
   return std::max(1U, static_cast<unsigned int>(ceil(NperYear * dt_years)));
@@ -71,11 +86,10 @@ in the above integral is in degrees C.  Here we think of the argument `TacC`
 as temperature in Celsius, but really it is the temperature above a threshold
 at which it is "positive".
 
-This integral is used for the expected number of positive degree days, unless the
-user selects a random PDD implementation with `-pdd_rand` or
-`-pdd_rand_repeatable`.  The user can choose \f$\sigma\f$ by option
-`-pdd_std_dev`.  Note that the integral is over a time interval of length
-`dt` instead of a whole year as stated in \ref CalovGreve05 . If `sigma` is zero, return the positive part of `TacC`.
+This integral is used for the expected number of positive degree days. The user can choose
+\f$\sigma\f$ by option `-pdd_std_dev`. Note that the integral is over a time interval of
+length `dt` instead of a whole year as stated in \ref CalovGreve05 . If `sigma` is zero,
+return the positive part of `TacC`.
  */
 double PDDMassBalance::CalovGreveIntegrand(double sigma, double TacC) {
 
@@ -98,9 +112,15 @@ double PDDMassBalance::CalovGreveIntegrand(double sigma, double TacC) {
  * @param N length of the T array
  * @param[out] PDDs pointer to a pre-allocated array with N-1 elements
  */
-void PDDMassBalance::get_PDDs(double *S, double dt_series,
-                              double *T, unsigned int N, double *PDDs) {
+void PDDMassBalance::get_PDDs(double dt_series,
+                              const std::vector<double> &S,
+                              const std::vector<double> &T,
+                              std::vector<double> &PDDs) {
+  assert(S.size() == T.size() and T.size() == PDDs.size());
+  assert(dt_series > 0.0);
+
   const double h_days = dt_series / m_seconds_per_day;
+  const size_t N = S.size();
 
   for (unsigned int k = 0; k < N; ++k) {
     PDDs[k] = h_days * CalovGreveIntegrand(S[k], T[k] - pdd_threshold_temp);
@@ -124,8 +144,11 @@ void PDDMassBalance::get_PDDs(double *S, double dt_series,
  * @param[in] T air temperature (array of length N)
  * @param[in] N array length
  */
-void PDDMassBalance::get_snow_accumulation(double *P, double *T,
-                                           unsigned int N) {
+void PDDMassBalance::get_snow_accumulation(const std::vector<double> &T,
+                                           std::vector<double> &P) {
+
+  assert(T.size() == P.size());
+  const size_t N = T.size();
 
   // Following \ref Hock2005b we employ a linear transition from Tmin to Tmax
   for (unsigned int i = 0; i < N; i++) {
@@ -157,7 +180,7 @@ void PDDMassBalance::get_snow_accumulation(double *P, double *T,
  *
  * - a fraction of the melted snow and ice refreezes, conceptualized
  *   as superimposed ice, and this is controlled by parameter \c
- *   ddf.refreezeFrac
+ *   ddf.refreeze_fraction
  *
  * - the excess number of PDDs is used to melt both the ice that came
  *   from refreeze and then any ice which is already present.
@@ -168,58 +191,101 @@ void PDDMassBalance::get_snow_accumulation(double *P, double *T,
  * The scheme here came from EISMINT-Greenland [\ref RitzEISMINT], but
  * is influenced by R. Hock (personal communication).
  */
-void PDDMassBalance::step(const DegreeDayFactors &ddf,
-                          double PDDs,
-                          double accumulation,
-                          double &snow_depth,
-                          double &cumulative_melt,
-                          double &cumulative_runoff,
-                          double &cumulative_smb) {
-
+PDDMassBalance::Changes PDDMassBalance::step(const DegreeDayFactors &ddf,
+                                             double PDDs,
+                                             double thickness,
+                                             double old_firn_depth,
+                                             double old_snow_depth,
+                                             double accumulation) {
   double
+    firn_depth      = old_firn_depth,
+    snow_depth      = old_snow_depth,
     max_snow_melted = PDDs * ddf.snow,
-    snow_melted = 0.0, excess_pdds = 0.0;
+    firn_melted     = 0.0,
+    snow_melted     = 0.0,
+    excess_pdds     = 0.0;
+
+  assert(thickness >= 0);
+
+  // snow depth cannot exceed total thickness
+  snow_depth = std::min(snow_depth, thickness);
+
+  assert(snow_depth >= 0);
+
+  // firn depth cannot exceed thickness - snow_depth
+  firn_depth = std::min(firn_depth, thickness - snow_depth);
+
+  assert(firn_depth >= 0);
+
+  double ice_thickness = thickness - snow_depth - firn_depth;
+
+  assert(ice_thickness >= 0);
 
   snow_depth += accumulation;
 
-  if (PDDs <= 0.0) {       // The "no melt" case.
+  if (PDDs <= 0.0) {            // The "no melt" case.
     snow_melted = 0.0;
+    firn_melted = 0.0,
     excess_pdds = 0.0;
   } else if (max_snow_melted <= snow_depth) {
     // Some of the snow melted and some is left; in any case, all of
     // the energy available for melt, namely all of the positive
     // degree days (PDDs) were used up in melting snow.
-
     snow_melted = max_snow_melted;
+    firn_melted = 0.0;
+    excess_pdds = 0.0;
+  } else if (max_snow_melted <= firn_depth + snow_depth) {
+    // All of the snow is melted but some firn is left; in any case, all of
+    // the energy available for melt, namely all of the positive
+    // degree days (PDDs) were used up in melting snow and firn.
+    snow_melted = snow_depth;
+    firn_melted = max_snow_melted - snow_melted;
     excess_pdds = 0.0;
   } else {
-    // All (snow_depth meters) of snow melted. Excess_pddsum is the
+    // All (firn_depth and snow_depth meters) of snow and firn melted. Excess_pdds is the
     // positive degree days available to melt ice.
+    firn_melted = firn_depth;
     snow_melted = snow_depth;
-    excess_pdds = PDDs - (snow_melted / ddf.snow); // units: K day
+    excess_pdds = PDDs - ((firn_melted + snow_melted) / ddf.snow); // units: K day
   }
 
   double
-    ice_melted              = excess_pdds * ddf.ice,
-    melt                    = snow_melted + ice_melted,
-    ice_created_by_refreeze = 0.0, runoff = 0.0;
+    ice_melted              = std::min(excess_pdds * ddf.ice, ice_thickness),
+    melt                    = snow_melted + firn_melted + ice_melted,
+    ice_created_by_refreeze = 0.0;
 
   if (refreeze_ice_melt) {
-    ice_created_by_refreeze = melt * ddf.refreezeFrac;
+    ice_created_by_refreeze = melt * ddf.refreeze_fraction;
   } else {
-    ice_created_by_refreeze = snow_melted * ddf.refreezeFrac;
+    // Should this only be snow melted?
+    ice_created_by_refreeze = (firn_melted + snow_melted) * ddf.refreeze_fraction;
   }
 
-  runoff = melt - ice_created_by_refreeze;
+  const double runoff = melt - ice_created_by_refreeze;
 
-  snow_depth -= snow_melted;
-  if (snow_depth < 0.0) {
-    snow_depth = 0.0;
-  }
+  snow_depth = std::max(snow_depth - snow_melted, 0.0);
+  firn_depth = std::max(firn_depth - firn_melted, 0.0);
 
-  cumulative_melt   += melt;
-  cumulative_runoff += runoff;
-  cumulative_smb    += accumulation - runoff;
+  // FIXME: need to add snow that hasn't melted, is this correct?
+  // firn_depth += (snow_depth - snow_melted);
+  // Turn firn into ice at X times accumulation
+  // firn_depth -= accumulation *  m_config->get_number("surface.pdd.firn_compaction_to_accumulation_ratio");
+
+  const double smb = accumulation - runoff;
+
+  Changes result;
+  // Ensure that we never generate negative ice thicknesses. As far as I can tell the code
+  // above guarantees that thickness + smb >= 0 *in exact arithmetic*. The check below
+  // should make sure that we don't get bitten by rounding errors.
+  result.smb        = thickness + smb >= 0 ? smb : -thickness;
+  result.firn_depth = firn_depth - old_firn_depth;
+  result.snow_depth = snow_depth - old_snow_depth;
+  result.melt       = melt;
+  result.runoff     = runoff;
+
+  assert(thickness + result.smb >= 0);
+
+  return result;
 }
 
 
@@ -229,10 +295,14 @@ which seems to be "mt19937" and is DIEHARD (whatever that means ...). Seed with
 wall clock time in seconds in non-repeatable case, and with 0 in repeatable case.
  */
 PDDrandMassBalance::PDDrandMassBalance(Config::ConstPtr config, units::System::Ptr system,
-                                       bool repeatable)
+                                       Kind kind)
   : PDDMassBalance(config, system) {
   pddRandGen = gsl_rng_alloc(gsl_rng_default);  // so pddRandGen != NULL now
-  gsl_rng_set(pddRandGen, repeatable ? 0 : time(0));
+  gsl_rng_set(pddRandGen, kind == REPEATABLE ? 0 : time(0));
+
+  m_method = (kind == NOT_REPEATABLE
+              ? "simulation of a random process"
+              : "repeatable simulation of a random process");
 }
 
 
@@ -249,7 +319,7 @@ PDDrandMassBalance::~PDDrandMassBalance() {
   number of days or number of days plus one.
 
   Thus this method ignores
-  `config.get_double("surface.pdd.max_evals_per_year")`, which is
+  `config.get_number("surface.pdd.max_evals_per_year")`, which is
   used in the base class PDDMassBalance.
 
   Implementation of get_PDDs() requires returned N >= 2, so we
@@ -271,9 +341,15 @@ unsigned int PDDrandMassBalance::get_timeseries_length(double dt) {
  * @param N number of points in the temperature time-series, each corresponds to a sub-interval
  * @param PDDs pointer to a pre-allocated array of length N
  */
-void PDDrandMassBalance::get_PDDs(double *S, double dt_series,
-                                  double *T, unsigned int N, double *PDDs) {
+void PDDrandMassBalance::get_PDDs(double dt_series,
+                                  const std::vector<double> &S,
+                                  const std::vector<double> &T,
+                                  std::vector<double> &PDDs) {
+  assert(S.size() == T.size() and T.size() == PDDs.size());
+  assert(dt_series > 0.0);
+
   const double h_days = dt_series / m_seconds_per_day;
+  const size_t N = S.size();
 
   for (unsigned int k = 0; k < N; ++k) {
     // average temperature in k-th interval
@@ -286,61 +362,65 @@ void PDDrandMassBalance::get_PDDs(double *S, double dt_series,
 }
 
 
-FaustoGrevePDDObject::FaustoGrevePDDObject(IceGrid::ConstPtr g)
-  : m_grid(g), m_config(g->ctx()->config()) {
+FaustoGrevePDDObject::FaustoGrevePDDObject(IceGrid::ConstPtr grid)
+  : m_grid(grid), m_config(grid->ctx()->config()),
+    m_temp_mj(grid, "temp_mj_faustogreve", WITHOUT_GHOSTS)
+{
 
-  beta_ice_w  = m_config->get_double("surface.pdd.fausto.beta_ice_w");
-  beta_snow_w = m_config->get_double("surface.pdd.fausto.beta_snow_w");
+  m_beta_ice_w  = m_config->get_number("surface.pdd.fausto.beta_ice_w");
+  m_beta_snow_w = m_config->get_number("surface.pdd.fausto.beta_snow_w");
 
-  T_c         = m_config->get_double("surface.pdd.fausto.T_c");
-  T_w         = m_config->get_double("surface.pdd.fausto.T_w");
-  beta_ice_c  = m_config->get_double("surface.pdd.fausto.beta_ice_c");
-  beta_snow_c = m_config->get_double("surface.pdd.fausto.beta_snow_c");
+  m_T_c         = m_config->get_number("surface.pdd.fausto.T_c");
+  m_T_w         = m_config->get_number("surface.pdd.fausto.T_w");
+  m_beta_ice_c  = m_config->get_number("surface.pdd.fausto.beta_ice_c");
+  m_beta_snow_c = m_config->get_number("surface.pdd.fausto.beta_snow_c");
 
-  fresh_water_density        = m_config->get_double("constants.fresh_water.density");
-  ice_density                = m_config->get_double("constants.ice.density");
-  pdd_fausto_latitude_beta_w = m_config->get_double("surface.pdd.fausto.latitude_beta_w");
+  m_fresh_water_density        = m_config->get_number("constants.fresh_water.density");
+  m_ice_density                = m_config->get_number("constants.ice.density");
+  m_pdd_fausto_latitude_beta_w = m_config->get_number("surface.pdd.fausto.latitude_beta_w");
+  m_refreeze_fraction          = m_config->get_number("surface.pdd.refreeze");
 
-  m_temp_mj.create(m_grid, "temp_mj_faustogreve", WITHOUT_GHOSTS);
   m_temp_mj.set_attrs("internal",
                     "mean July air temp from Fausto et al (2009) parameterization",
-                    "K", "");
+                      "K", "K", "", 0);
 }
 
+LocalMassBalance::DegreeDayFactors FaustoGrevePDDObject::degree_day_factors(int i, int j,
+                                                                            double latitude) {
 
-void FaustoGrevePDDObject::setDegreeDayFactors(int i, int j,
-                                               double /* usurf */,
-                                               double lat, double /* lon */,
-                                               LocalMassBalance::DegreeDayFactors &ddf) {
+  LocalMassBalance::DegreeDayFactors ddf;
+  ddf.refreeze_fraction = m_refreeze_fraction;
 
   IceModelVec::AccessList list(m_temp_mj);
   const double T_mj = m_temp_mj(i,j);
 
-  if (lat < pdd_fausto_latitude_beta_w) { // case lat < 72 deg N
-    ddf.ice  = beta_ice_w;
-    ddf.snow = beta_snow_w;
+  if (latitude < m_pdd_fausto_latitude_beta_w) { // case latitude < 72 deg N
+    ddf.ice  = m_beta_ice_w;
+    ddf.snow = m_beta_snow_w;
   } else { // case > 72 deg N
-    if (T_mj >= T_w) {
-      ddf.ice  = beta_ice_w;
-      ddf.snow = beta_snow_w;
-    } else if (T_mj <= T_c) {
-      ddf.ice  = beta_ice_c;
-      ddf.snow = beta_snow_c;
+    if (T_mj >= m_T_w) {
+      ddf.ice  = m_beta_ice_w;
+      ddf.snow = m_beta_snow_w;
+    } else if (T_mj <= m_T_c) {
+      ddf.ice  = m_beta_ice_c;
+      ddf.snow = m_beta_snow_c;
     } else { // middle case   T_c < T_mj < T_w
       const double
-        lam_i = pow((T_w - T_mj) / (T_w - T_c) , 3.0),
-        lam_s = (T_mj - T_c) / (T_w - T_c);
-      ddf.ice  = beta_ice_w + (beta_ice_c - beta_ice_w) * lam_i;
-      ddf.snow = beta_snow_w + (beta_snow_c - beta_snow_w) * lam_s;
+        lam_i = pow((m_T_w - T_mj) / (m_T_w - m_T_c) , 3.0),
+        lam_s = (T_mj - m_T_c) / (m_T_w - m_T_c);
+      ddf.ice  = m_beta_ice_w + (m_beta_ice_c - m_beta_ice_w) * lam_i;
+      ddf.snow = m_beta_snow_w + (m_beta_snow_c - m_beta_snow_w) * lam_s;
     }
   }
 
   // degree-day factors in \ref Faustoetal2009 are water-equivalent
   //   thickness per degree day; ice-equivalent thickness melted per degree
   //   day is slightly larger; for example, iwfactor = 1000/910
-  const double iwfactor = fresh_water_density / ice_density;
+  const double iwfactor = m_fresh_water_density / m_ice_density;
   ddf.snow *= iwfactor;
   ddf.ice  *= iwfactor;
+
+  return ddf;
 }
 
 
@@ -352,21 +432,17 @@ void FaustoGrevePDDObject::update_temp_mj(const IceModelVec2S &surfelev,
                                           const IceModelVec2S &lat,
                                           const IceModelVec2S &lon) {
   const double
-    d_mj     = m_config->get_double("atmosphere.fausto_air_temp.d_mj"),      // K
-    gamma_mj = m_config->get_double("atmosphere.fausto_air_temp.gamma_mj"),  // K m-1
-    c_mj     = m_config->get_double("atmosphere.fausto_air_temp.c_mj"),      // K (degN)-1
-    kappa_mj = m_config->get_double("atmosphere.fausto_air_temp.kappa_mj");  // K (degW)-1
+    d_mj     = m_config->get_number("atmosphere.fausto_air_temp.d_mj"),      // K
+    gamma_mj = m_config->get_number("atmosphere.fausto_air_temp.gamma_mj"),  // K m-1
+    c_mj     = m_config->get_number("atmosphere.fausto_air_temp.c_mj"),      // K (degN)-1
+    kappa_mj = m_config->get_number("atmosphere.fausto_air_temp.kappa_mj");  // K (degW)-1
 
   const IceModelVec2S
     &h        = surfelev,
     &lat_degN = lat,
     &lon_degE = lon;
 
-  IceModelVec::AccessList list;
-  list.add(h);
-  list.add(lat_degN);
-  list.add(lon_degE);
-  list.add(m_temp_mj);
+  IceModelVec::AccessList list{&h, &lat_degN, &lon_degE, &m_temp_mj};
 
   for (Points p(*m_grid); p; p.next()) {
     const int i = p.i(), j = p.j();

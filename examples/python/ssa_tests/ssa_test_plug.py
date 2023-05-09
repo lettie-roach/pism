@@ -1,6 +1,6 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 #
-# Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016 Ed Bueler and Constantine Khroulev and David Maxwell
+# Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016, 2018, 2021 Ed Bueler and Constantine Khroulev and David Maxwell
 #
 # This file is part of PISM.
 #
@@ -25,7 +25,7 @@ L = 50.e3  # // 50km half-width
 dhdx = 0.001  # // pure number, slope of surface & bed
 tauc0 = 0.  # // No basal shear stress
 B0 = 3.7e8  # // Pa s^{1/3}; hardness
-#// given on p. 239 of Schoof; why so big?
+# // given on p. 239 of Schoof; why so big?
 glen_n = 3.
 
 
@@ -33,18 +33,20 @@ class test_plug(PISM.ssa.SSAExactTestCase):
 
     def _initGrid(self):
         self.grid = PISM.IceGrid.Shallow(PISM.Context().ctx, L, L, 0, 0,
-                                         self.Mx, self.My, PISM.NONE)
+                                         self.Mx, self.My,
+                                         PISM.CELL_CORNER,
+                                         PISM.NOT_PERIODIC)
 
     def _initPhysics(self):
         config = self.config
 
-        #// Enthalpy converter is irrelevant for this test.
+        # // Enthalpy converter is irrelevant for this test.
         enthalpyconverter = PISM.EnthalpyConverter(config)
 
-        #// Use constant hardness
+        # // Use constant hardness
         config.set_string("stress_balance.ssa.flow_law", "isothermal_glen")
-        config.set_double("flow_law.isothermal_Glen.ice_softness", pow(B0, -glen_n))
-        config.set_double("stress_balance.ssa.Glen_exponent", glen_n)
+        config.set_number("flow_law.isothermal_Glen.ice_softness", pow(B0, -glen_n))
+        config.set_number("stress_balance.ssa.Glen_exponent", glen_n)
 
         self.modeldata.setPhysics(enthalpyconverter)
 
@@ -59,13 +61,13 @@ class test_plug(PISM.ssa.SSAExactTestCase):
         vecs.tauc.set(tauc0)
         vecs.mask.set(PISM.MASK_GROUNDED)
 
-        bc_mask = vecs.bc_mask
+        vel_bc_mask = vecs.vel_bc_mask
         vel_bc = vecs.vel_bc
         bed = vecs.bedrock_altitude
         surface = vecs.surface_altitude
 
         grid = self.grid
-        with PISM.vec.Access(comm=[bc_mask, vel_bc, bed, surface]):
+        with PISM.vec.Access(comm=[vel_bc_mask, vel_bc, bed, surface]):
             for (i, j) in grid.points():
                 x = grid.x(i)
                 y = grid.y(j)
@@ -75,7 +77,7 @@ class test_plug(PISM.ssa.SSAExactTestCase):
 
                 edge = ((j == 0) or (j == grid.My() - 1)) or ((i == 0) or (i == grid.Mx() - 1))
                 if edge:
-                    bc_mask[i, j] = 1
+                    vel_bc_mask[i, j] = 1
                     [u, v] = self.exactSolution(i, j, x, y)
                     vel_bc(i, j).u = u
                     vel_bc(i, j).v = v
@@ -84,30 +86,28 @@ class test_plug(PISM.ssa.SSAExactTestCase):
         # Ensure we never use the strength extension.
         self.ssa.strength_extension.set_min_thickness(H0 / 2)
 
-        #// The finite difference code uses the following flag to treat the non-periodic grid correctly.
-        # self.config.set_boolean("stress_balance.ssa.compute_surface_gradient_inward", True);
+        # // The finite difference code uses the following flag to treat the non-periodic grid correctly.
+        # self.config.set_flag("stress_balance.ssa.compute_surface_gradient_inward", True);
 
         # SSAFEM uses this (even though it has "ssafd" in its name)
-        self.config.set_double("stress_balance.ssa.epsilon", 0.0)
+        self.config.set_number("stress_balance.ssa.epsilon", 0.0)
 
     def exactSolution(self, i, j, x, y):
-        earth_grav = self.config.get_double("constants.standard_gravity")
-        ice_rho = self.config.get_double("constants.ice.density")
+        earth_grav = self.config.get_number("constants.standard_gravity")
+        ice_rho = self.config.get_number("constants.ice.density")
         f = ice_rho * earth_grav * H0 * dhdx
         ynd = y / L
 
         u = 0.5 * (f ** 3) * (L ** 4) / ((B0 * H0) ** 3) * (1 - ynd ** 4)
         return [u, 0]
 
+
 # The main code for a run follows:
 if __name__ == '__main__':
     context = PISM.Context()
+    config = context.config
 
     PISM.set_abort_on_sigint(True)
 
-    Mx = PISM.optionsInt("-Mx", "Number of grid points in x-direction", default=61)
-    My = PISM.optionsInt("-My", "Number of grid points in y-direction", default=61)
-    output_file = PISM.optionsString("-o", "output file", default="test_plug.nc")
-
-    tc = test_plug(Mx, My)
-    tc.run(output_file)
+    tc = test_plug(int(config.get_number("grid.Mx")), int(config.get_number("grid.My")))
+    tc.run(config.get_string("output.file_name"))

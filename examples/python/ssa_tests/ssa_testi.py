@@ -1,6 +1,6 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 #
-# Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016 Ed Bueler and Constantine Khroulev and David Maxwell
+# Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016, 2018, 2021 Ed Bueler and Constantine Khroulev and David Maxwell
 #
 # This file is part of PISM.
 #
@@ -40,17 +40,20 @@ class testi(PISM.ssa.SSAExactTestCase):
         Ly = 3 * L_schoof   # 300.0 km half-width (L=40.0km in Schoof's choice of variables)
         Lx = max(60.0e3, ((Mx - 1) / 2.) * (2.0 * Ly / (My - 1)))
         self.grid = PISM.IceGrid.Shallow(PISM.Context().ctx, Lx, Ly, 0, 0,
-                                         Mx, My, PISM.NOT_PERIODIC)
+                                         Mx, My,
+                                         PISM.CELL_CORNER,
+                                         PISM.NOT_PERIODIC)
 
     def _initPhysics(self):
         config = self.config
-        config.set_boolean("basal_resistance.pseudo_plastic.enabled", False)
+        config.set_flag("basal_resistance.pseudo_plastic.enabled", False)
 
         # irrelevant
         enthalpyconverter = PISM.EnthalpyConverter(config)
 
         config.set_string("stress_balance.ssa.flow_law", "isothermal_glen")
-        config.set_double("flow_law.isothermal_Glen.ice_softness", pow(B_schoof, -config.get_double("stress_balance.ssa.Glen_exponent")))
+        config.set_number("flow_law.isothermal_Glen.ice_softness", pow(
+            B_schoof, -config.get_number("stress_balance.ssa.Glen_exponent")))
 
         self.modeldata.setPhysics(enthalpyconverter)
 
@@ -59,17 +62,17 @@ class testi(PISM.ssa.SSAExactTestCase):
         self._allocateBCs()
         vecs = self.modeldata.vecs
 
-        vecs.bc_mask.set(0)
+        vecs.vel_bc_mask.set(0)
         vecs.thk.set(H0_schoof)
         vecs.mask.set(PISM.MASK_GROUNDED)
 
         # The finite difference code uses the following flag to treat
         # the non-periodic grid correctly.
-        self.config.set_boolean("stress_balance.ssa.compute_surface_gradient_inward", True)
-        self.config.set_double("stress_balance.ssa.epsilon", 0.0)  # don't use this lower bound
+        self.config.set_flag("stress_balance.ssa.compute_surface_gradient_inward", True)
+        self.config.set_number("stress_balance.ssa.epsilon", 0.0)  # don't use this lower bound
 
-        standard_gravity = self.config.get_double("constants.standard_gravity")
-        ice_rho = self.config.get_double("constants.ice.density")
+        standard_gravity = self.config.get_number("constants.standard_gravity")
+        ice_rho = self.config.get_number("constants.ice.density")
         theta = math.atan(0.001)
         f = ice_rho * standard_gravity * H0_schoof * math.tan(theta)
         grid = self.grid
@@ -78,12 +81,12 @@ class testi(PISM.ssa.SSAExactTestCase):
                 y = grid.y(j)
                 vecs.tauc[i, j] = f * (abs(y / L_schoof) ** m_schoof)
 
-        bc_mask = vecs.bc_mask
+        vel_bc_mask = vecs.vel_bc_mask
         vel_bc = vecs.vel_bc
         surface = vecs.surface_altitude
         bed = vecs.bedrock_altitude
         grid = self.grid
-        with PISM.vec.Access(comm=[surface, bed, vel_bc, bc_mask]):
+        with PISM.vec.Access(comm=[surface, bed, vel_bc, vel_bc_mask]):
             for (i, j) in grid.points():
                 p = PISM.exactI(m_schoof, grid.x(i), grid.y(j))
                 bed[i, j] = p.bed
@@ -91,7 +94,7 @@ class testi(PISM.ssa.SSAExactTestCase):
 
                 edge = ((j == 0) or (j == grid.My() - 1)) or ((i == 0) or (i == grid.Mx() - 1))
                 if edge:
-                    bc_mask[i, j] = 1
+                    vel_bc_mask[i, j] = 1
                     vel_bc[i, j].u = p.u
                     vel_bc[i, j].v = p.v
 
@@ -99,15 +102,17 @@ class testi(PISM.ssa.SSAExactTestCase):
         p = PISM.exactI(m_schoof, x, y)
         return [p.u, p.v]
 
+
 # The main code for a run follows:
 if __name__ == '__main__':
     context = PISM.Context()
+    config = context.config
 
     PISM.set_abort_on_sigint(True)
 
-    Mx = PISM.optionsInt("-Mx", "Number of grid points in x-direction", default=11)
-    My = PISM.optionsInt("-My", "Number of grid points in y-direction", default=61)
-    output_file = PISM.optionsString("-o", "output file", default="testi.nc")
+    config.set_number("grid.Mx", 11, PISM.CONFIG_DEFAULT)
+    config.set_number("grid.My", 61, PISM.CONFIG_DEFAULT)
 
-    tc = testi(Mx, My)
-    tc.run(output_file)
+    tc = testi(int(config.get_number("grid.Mx")),
+               int(config.get_number("grid.My")))
+    tc.run(config.get_string("output.file_name"))

@@ -1,6 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-import sys, time, netCDF4
+import sys
+import time
+import netCDF4
 import numpy as np
 
 def generate_input(filename):
@@ -17,10 +19,7 @@ def generate_input(filename):
     dy = dx
 
     topg = np.zeros((My, Mx))
-    thk  = np.zeros((My, Mx)) + 1000.0
-    artm = np.zeros((My, Mx)) + 273.15 -30  # -30 degrees Celsius
-    hflx = np.zeros((My, Mx)) + 0.042       # 42 mW/m2
-    smb = np.zeros((My, Mx))                # zero
+    thk = np.zeros((My, Mx)) + 1000.0
 
     # Write the data:
     nc = netCDF4.Dataset(filename, "w")
@@ -52,22 +51,12 @@ def generate_input(filename):
     thk_var.standard_name = "land_ice_thickness"
     thk_var[:] = thk
 
-    hflx_var = def_var(nc, "bheatflux", "W m-2", fill_value)
-    hflx_var.standard_name = "land_ice_basal_heat_flux"
-    hflx_var[:] = hflx
-
-    smb_var = def_var(nc, "climatic_mass_balance", "kg m-2 s-1", fill_value)
-    smb_var.standard_name = "land_ice_surface_specific_mass_balance"
-    smb_var[:] = smb
-
-    artm_var = def_var(nc, "ice_surface_temp", "K", fill_value)
-    artm_var[:] = artm
-
     # set global attributes
     nc.Conventions = 'CF-1.4'
     setattr(nc, 'history', historystr)
 
     nc.close()
+
 
 def generate_forcing(filename):
     "Generate surface temperature forcing."
@@ -75,12 +64,15 @@ def generate_forcing(filename):
     te_yr = 300000
     dt_yr = 10
 
-    Mt = (te_yr - ts_yr) / dt_yr + 1
-    delta_T =  np.zeros(Mt)
+    Mt = int((te_yr - ts_yr) / dt_yr + 1)
+    delta_T = np.zeros(Mt)
     time = np.linspace(ts_yr, te_yr, Mt)
+    time_bounds = np.zeros((Mt, 2))
+    time_bounds[:, 0] = np.r_[-dt_yr, time[:-1]]
+    time_bounds[:, 1] = time
 
-    delta_T[np.where((time>100000))] = 25.0
-    delta_T[np.where((time>=150000))] = 0.0
+    delta_T[np.where((time > 100000))] = 25.0
+    delta_T[np.where((time >= 150000))] = 0.0
 
     # Write the data:
     nc = netCDF4.Dataset(dTfile, "w")
@@ -93,8 +85,14 @@ def generate_forcing(filename):
         var.units = units
         return var
 
-    t_var = def_var(nc, "time", "years since since 1-1-1", fill_value)
+    t_var = def_var(nc, "time", "common_years since 1-1-1", fill_value)
     t_var[:] = time
+    t_var.bounds = "time_bounds"
+    t_var.calendar = "365_day"
+
+    nc.createDimension("nv", size=2)
+    tb_var = nc.createVariable("time_bounds", 'f', dimensions=("time", "nv"))
+    tb_var[:] = time_bounds
 
     dT_var = def_var(nc, "delta_T", "K", fill_value)
     dT_var.standard_name = "land_ice_temperature_at_firn_base"
@@ -107,15 +105,15 @@ def generate_forcing(filename):
 
     nc.close()
 
+
 if __name__ == "__main__":
     fill_value = np.nan
 
-    prefix = 'box'
+    prefix = 'slab'
     ncfile = prefix + '.nc'
     dTfile = prefix + '_dT.nc'
 
-    historysep = ' '
-    historystr = time.asctime() + ': ' + historysep.join(sys.argv) + '\n'
+    historystr = time.asctime() + ': ' + ' '.join(sys.argv) + '\n'
 
     generate_input(ncfile)
     print('Wrote PISM input file %s.' % ncfile)

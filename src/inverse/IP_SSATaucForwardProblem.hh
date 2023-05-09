@@ -1,4 +1,4 @@
-// Copyright (C) 2012, 2013, 2014, 2015, 2016 David Maxwell and Constantine Khroulev
+// Copyright (C) 2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021 David Maxwell and Constantine Khroulev
 //
 // This file is part of PISM.
 //
@@ -19,10 +19,10 @@
 #ifndef IP_SSATAUCFORWARDPROBLEM_HH_4AEVR4Z
 #define IP_SSATAUCFORWARDPROBLEM_HH_4AEVR4Z
 
-#include "base/stressbalance/ssa/SSAFEM.hh"
+#include "pism/stressbalance/ssa/SSAFEM.hh"
 #include "IPDesignVariableParameterization.hh"
-#include "base/util/petscwrappers/KSP.hh"
-#include "base/util/petscwrappers/Mat.hh"
+#include "pism/util/petscwrappers/KSP.hh"
+#include "pism/util/petscwrappers/Mat.hh"
 
 namespace pism {
 namespace inverse {
@@ -104,14 +104,17 @@ class IP_SSATaucForwardProblem : public stressbalance::SSAFEM
 {
 public:
 
-  typedef IceModelVec2S DesignVec; ///< The function space for the design variable, i.e. \f$\tau_c\f$.
-  typedef IceModelVec2V StateVec;  ///< The function space for the state variable, \f$u_{\rm SSA}\f$.
+  /// The function space for the design variable, i.e. \f$\tau_c\f$.
+  typedef IceModelVec2S DesignVec;
+  /// The function space for the state variable, \f$u_{\rm SSA}\f$.
+  typedef IceModelVec2V StateVec;
 
-  //! Constructs from the same objects as SSAFEM, plus a specification of how \f$\tau_c\f$ is parameterized.
-  IP_SSATaucForwardProblem(IceGrid::ConstPtr g, EnthalpyConverter::Ptr e,
+  //! Constructs from the same objects as SSAFEM, plus a specification of how \f$\tau_c\f$
+  //! is parameterized.
+  IP_SSATaucForwardProblem(IceGrid::ConstPtr g,
                            IPDesignVariableParameterization &tp);
 
-  virtual ~IP_SSATaucForwardProblem();
+  virtual ~IP_SSATaucForwardProblem() = default;
 
   void init();
 
@@ -163,13 +166,11 @@ public:
   virtual void apply_linearization_transpose(IceModelVec2V &du, IceModelVec2S &dzeta);
 
   //! Exposes the DMDA of the underlying grid for the benefit of TAO.
-  virtual void get_da(DM *da) {
-    *da = *m_da;
+  petsc::DM& get_da() const {
+    return *m_da;
   }
 
 protected:
-
-  void construct();
 
   /// Current value of zeta, provided from caller.
   IceModelVec2S   *m_zeta;
@@ -193,8 +194,7 @@ protected:
   IceModelVec2V  m_du_local;
 
   fem::ElementIterator m_element_index;
-  fem::ElementMap      m_element;
-  fem::Q1Quadrature4   m_quadrature;
+  fem::Q1Element2       m_element;
 
   /// KSP used in \ref apply_linearization and \ref apply_linearization_transpose
   petsc::KSP  m_ksp;

@@ -1,4 +1,4 @@
-// Copyright (C) 2012, 2014, 2015  David Maxwell and Constantine Khroulev
+// Copyright (C) 2012, 2014, 2015, 2017  David Maxwell and Constantine Khroulev
 //
 // This file is part of PISM.
 //
@@ -19,7 +19,7 @@
 #include <cassert>
 
 #include "IPTwoBlockVec.hh"
-#include "base/util/error_handling.hh"
+#include "pism/util/error_handling.hh"
 
 namespace pism {
 namespace inverse {
@@ -69,10 +69,6 @@ IPTwoBlockVec::IPTwoBlockVec(Vec a, Vec b) {
                           m_scatter_a.rawptr()); PISM_CHK(ierr, "VecScatterCreate");
   ierr = VecScatterCreate(m_ab, m_b_in_ab, b, is_b,
                           m_scatter_b.rawptr()); PISM_CHK(ierr, "VecScatterCreate");
-}
-
-IPTwoBlockVec::~IPTwoBlockVec() {
-  // empty
 }
 
 IS IPTwoBlockVec::blockAIndexSet() {

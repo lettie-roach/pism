@@ -1,4 +1,4 @@
-// Copyright (C) 2004-2016 Jed Brown, Ed Bueler and Constantine Khroulev
+// Copyright (C) 2004-2017, 2019, 2020, 2021 Jed Brown, Ed Bueler and Constantine Khroulev
 //
 // This file is part of PISM.
 //
@@ -19,26 +19,26 @@
 static char help[] =
 "Ice sheet driver for PISM (SIA and SSA) verification.  Uses exact solutions\n"
 "  to various coupled subsystems.  Computes difference between exact solution\n"
-"  and numerical solution.  Can also just compute exact solution (-eo).\n"
+"  and numerical solution.\n"
 "  Currently implements tests A, B, C, D, E, F, G, H, K, L.\n\n";
 
 #include <string>
 
-#include "base/util/IceGrid.hh"
-#include "base/util/PISMConfig.hh"
-#include "base/util/error_handling.hh"
-#include "base/util/petscwrappers/PetscInitializer.hh"
-#include "base/util/pism_options.hh"
-#include "verif/iceCompModel.hh"
-#include "base/util/Context.hh"
-#include "base/util/Logger.hh"
-#include "base/util/PISMTime.hh"
-#include "base/enthalpyConverter.hh"
+#include "pism/util/IceGrid.hh"
+#include "pism/util/Config.hh"
+#include "pism/util/error_handling.hh"
+#include "pism/util/petscwrappers/PetscInitializer.hh"
+#include "pism/util/pism_options.hh"
+#include "pism/verification/iceCompModel.hh"
+#include "pism/util/Context.hh"
+#include "pism/util/Logger.hh"
+#include "pism/util/Time.hh"
+#include "pism/util/EnthalpyConverter.hh"
 
 using namespace pism;
 
 //! Allocate the PISMV (verification) context. Uses ColdEnthalpyConverter.
-Context::Ptr pismv_context(MPI_Comm com, const std::string &prefix) {
+std::shared_ptr<Context> pismv_context(MPI_Comm com, const std::string &prefix) {
   // unit system
   units::System::Ptr sys(new units::System);
 
@@ -48,17 +48,18 @@ Context::Ptr pismv_context(MPI_Comm com, const std::string &prefix) {
   // configuration parameters
   Config::Ptr config = config_from_options(com, *logger, sys);
 
-  config->set_string("time.calendar", "none");
+  config->set_string("grid.periodicity", "none");
+  config->set_string("grid.registration", "corner");
 
-  set_config_from_options(*config);
+  set_config_from_options(sys, *config);
 
   print_config(*logger, 3, *config);
 
-  Time::Ptr time = time_from_options(com, config, sys);
+  Time::Ptr time = std::make_shared<Time>(com, config, *logger, sys);
 
   EnthalpyConverter::Ptr EC = EnthalpyConverter::Ptr(new ColdEnthalpyConverter(*config));
 
-  return Context::Ptr(new Context(com, sys, config, EC, time, logger, prefix));
+  return std::shared_ptr<Context>(new Context(com, sys, config, EC, time, logger, prefix));
 }
 
 GridParameters pismv_grid_defaults(Config::Ptr config,
@@ -67,18 +68,20 @@ GridParameters pismv_grid_defaults(Config::Ptr config,
 
   GridParameters P;
 
+  // use the cell corner grid registration
+  P.registration = CELL_CORNER;
   // use the non-periodic grid:
   P.periodicity = NOT_PERIODIC;
   // equal spacing is the default for all the tests except K
-  P.Lx = config->get_double("grid.Lx");
-  P.Ly = config->get_double("grid.Ly");
+  P.Lx = config->get_number("grid.Lx");
+  P.Ly = config->get_number("grid.Ly");
 
-  P.Mx = config->get_double("grid.Mx");
-  P.My = config->get_double("grid.My");
+  P.Mx = config->get_number("grid.Mx");
+  P.My = config->get_number("grid.My");
 
   SpacingType spacing = EQUAL;
-  double Lz = config->get_double("grid.Lz");
-  unsigned int Mz = config->get_double("grid.Mz");
+  double Lz = config->get_number("grid.Lz");
+  unsigned int Mz = config->get_number("grid.Mz");
 
   switch (testname) {
   case 'A':
@@ -107,8 +110,8 @@ GridParameters pismv_grid_defaults(Config::Ptr config,
   case 'K':
   case 'O':
     // use 2000km by 2000km by 4000m rectangular domain, but make truely periodic
-    config->set_double("grid.Mbz", 2);
-    config->set_double("grid.Lbz", 1000);
+    config->set_number("grid.Mbz", 2);
+    config->set_number("grid.Lbz", 1000);
     P.Lx = 1000e3;
     P.Ly = P.Lx;
     Lz = 4000;
@@ -125,24 +128,29 @@ GridParameters pismv_grid_defaults(Config::Ptr config,
   }
 
   P.z = IceGrid::compute_vertical_levels(Lz, Mz, spacing,
-                                         config->get_double("grid.lambda"));
+                                         config->get_number("grid.lambda"));
   return P;
 }
 
-IceGrid::Ptr pismv_grid(Context::Ptr ctx, char testname) {
-  options::String input_file("-i", "Specifies a PISM input file");
-  options::forbidden("-bootstrap");
+IceGrid::Ptr pismv_grid(std::shared_ptr<Context> ctx, char testname) {
+  auto config = ctx->config();
 
-  if (input_file.is_set()) {
-    Periodicity p = string_to_periodicity(ctx->config()->get_string("grid.periodicity"));
+  auto input_file = config->get_string("input.file");
+
+  if (config->get_flag("input.bootstrap")) {
+    throw RuntimeError(PISM_ERROR_LOCATION, "pismv does not support bootstrapping");
+  }
+
+  if (not input_file.empty()) {
+    GridRegistration r = string_to_registration(ctx->config()->get_string("grid.registration"));
 
     // get grid from a PISM input file
-    return IceGrid::FromFile(ctx, input_file, {"enthalpy", "temp"}, p);
+    return IceGrid::FromFile(ctx, input_file, {"enthalpy", "temp"}, r);
   } else {
     // use defaults set by pismv_grid_defaults()
     GridParameters P = pismv_grid_defaults(ctx->config(), testname);
     P.horizontal_size_from_options();
-    P.horizontal_extent_from_options();
+    P.horizontal_extent_from_options(ctx->unit_system());
     P.vertical_grid_from_options(ctx->config());
     P.ownership_ranges_from_options(ctx->size());
 
@@ -154,19 +162,18 @@ int main(int argc, char *argv[]) {
   MPI_Comm com = MPI_COMM_WORLD;
 
   petsc::Initializer petsc(argc, argv, help);
-  com = PETSC_COMM_WORLD;
+  com = MPI_COMM_WORLD;
       
   /* This explicit scoping forces destructors to be called before PetscFinalize() */
   try {
-    Context::Ptr ctx = pismv_context(com, "pismv");
+    std::shared_ptr<Context> ctx = pismv_context(com, "pismv");
     Logger::Ptr log = ctx->log();
 
     std::string usage =
-      "  pismv -test x [-no_report] [-eo] [OTHER PISM & PETSc OPTIONS]\n"
+      "  pismv -test x [-no_report] [OTHER PISM & PETSc OPTIONS]\n"
       "where:\n"
       "  -test x     SIA-type verification test (x = A|B|C|D|F|G|H|K|L)\n"
       "  -no_report  do not give error report at end of run\n"
-      "  -eo         do not do numerical run; exact solution only\n"
       "(see User's Manual for tests I and J).\n";
 
     std::vector<std::string> required(1, "-test");
@@ -191,10 +198,12 @@ int main(int argc, char *argv[]) {
     m.run();
     log->message(2, "done with run\n");
 
-    m.reportErrors();
+    if (not options::Bool("-no_report", "do not print the error report")) {
+      m.reportErrors();
+    }
 
     // provide a default output file name if no -o option is given.
-    m.writeFiles("unnamed.nc");
+    m.save_results();
 
     print_unused_parameters(*log, 3, *config);
   }

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # @package fill_missing
 # @brief This script solves the Laplace equation as a method of filling holes in map-plane data.
@@ -29,9 +29,9 @@ import numpy as np
 def assemble_matrix(mask):
     """Assemble the matrix corresponding to the standard 5-point stencil
     approximation of the Laplace operator on the domain defined by
-    mask == True, where mask is a 2D NumPy array. The stencil wraps
-    around the grid, i.e. this is an approximation of the Laplacian
-    on a torus.
+    mask == True, where mask is a 2D NumPy array.
+
+    Uses zero Neumann BC at grid edges.
 
     The grid spacing is ignored, which is equivalent to assuming equal
     spacing in x and y directions.
@@ -60,19 +60,20 @@ def assemble_matrix(mask):
     # loop over owned block of rows on this
     # processor and insert entry values
     row_start, row_end = A.getOwnershipRange()
-    for row in xrange(row_start, row_end):
-        A[row, row] = diagonal
+    for row in range(row_start, row_end):
 
         i = row // ncol    # map row number to
         j = row - i * ncol  # grid coordinates
 
         if mask[i, j] == False:
+            A[row, row] = diagonal
             continue
+
+        D = diagonal
 
         # i
         if i == 0:              # top row
-            col = R(nrow - 1, j)
-            A[row, col] = offdx
+            D += offdy
 
         if i > 0:               # interior
             col = R(i - 1, j)
@@ -83,13 +84,11 @@ def assemble_matrix(mask):
             A[row, col] = offdx
 
         if i == nrow - 1:       # bottom row
-            col = R(0, j)
-            A[row, col] = offdx
+            D += offdy
 
         # j
         if j == 0:              # left-most column
-            col = R(i, ncol - 1)
-            A[row, col] = offdy
+            D += offdx
 
         if j > 0:               # interior
             col = R(i, j - 1)
@@ -100,8 +99,9 @@ def assemble_matrix(mask):
             A[row, col] = offdy
 
         if j == ncol - 1:       # right-most column
-            col = R(i, 0)
-            A[row, col] = offdy
+            D += offdx
+
+        A[row, row] = D
 
     # communicate off-processor values
     # and setup internal data structures
@@ -128,7 +128,7 @@ def assemble_rhs(rhs, X):
     # nodes.
     rhs.set(0.0)
 
-    for row in xrange(row_start, row_end):
+    for row in range(row_start, row_end):
         i = row // ncol    # map row number to
         j = row - i * ncol  # grid coordinates
 
@@ -231,7 +231,7 @@ def fill_2d_record(data, matrix=None):
 def test():
     "Test fill_missing() using synthetic data."
     N = 201
-    M = N * 1.5
+    M = int(N * 1.5)
     x = np.linspace(-1, 1, N)
     y = np.linspace(-1, 1, M)
     xx, yy = np.meshgrid(x, y)
@@ -278,7 +278,7 @@ def fill_variable(nc, name):
     if var.ndim == 3:
         A = None
         n_records = var.shape[0]
-        for t in xrange(n_records):
+        for t in range(n_records):
             PETSc.Sys.Print("Processing record %d/%d..." % (t + 1, n_records))
             data = var[t, :, :]
 
@@ -330,6 +330,7 @@ def add_history(nc):
     else:
         nc.history = historystr
 
+
 if __name__ == "__main__":
     from argparse import ArgumentParser
     import os
@@ -361,7 +362,7 @@ if __name__ == "__main__":
 
     if options.all:
         nc = NC(input_filename)
-        variables = nc.variables.keys()
+        variables = list(nc.variables.keys())
         nc.close()
     else:
         try:
@@ -404,7 +405,7 @@ if __name__ == "__main__":
             nc = NC(tmp_filename, 'a')
         else:
             nc = NC(input_filename, 'r')
-    except Exception, message:
+    except Exception as message:
         PETSc.Sys.Print(message)
         PETSc.Sys.Print("Note: %s was not modified." % output_filename)
         sys.exit(-1)
@@ -414,7 +415,7 @@ if __name__ == "__main__":
     for name in variables:
         try:
             fill_variable(nc, name)
-        except Exception, message:
+        except Exception as message:
             PETSc.Sys.Print("ERROR:", message)
             PETSc.Sys.Print("Note: %s was not modified." % output_filename)
             sys.exit(-1)

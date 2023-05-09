@@ -1,4 +1,4 @@
-/* Copyright (C) 2015, 2016 PISM Authors
+/* Copyright (C) 2015, 2016, 2017, 2018, 2019 PISM Authors
  *
  * This file is part of PISM.
  *
@@ -20,35 +20,50 @@
 #ifndef _ICEREGIONALMODEL_H_
 #define _ICEREGIONALMODEL_H_
 
-#include "base/iceModel.hh"
+#include <memory>               // shared_ptr
+
+#include "pism/icemodel/IceModel.hh"
 
 namespace pism {
+
+namespace energy {
+class CHSystem;
+} // end of namespace energy
 
 //! \brief A version of the PISM core class (IceModel) which knows about the
 //! `no_model_mask` and its semantics.
 class IceRegionalModel : public IceModel {
 public:
-  IceRegionalModel(IceGrid::Ptr g, Context::Ptr c);
+  IceRegionalModel(IceGrid::Ptr g, std::shared_ptr<Context> c);
+
+  const energy::CHSystem* cryo_hydrologic_system() const;
+
 protected:
-  virtual void bootstrap_2d(const PIO &input_file);
-  virtual void restart_2d(const PIO &input_file, unsigned int record);
-  virtual void model_state_setup();
-  virtual void createVecs();
-  virtual void allocate_stressbalance();
-  virtual void allocate_basal_yield_stress();
-  virtual void massContExplicitStep();
-  virtual void cell_interface_fluxes(bool dirichlet_bc,
-                                     int i, int j,
-                                     StarStencil<Vector2> input_velocity,
-                                     StarStencil<double> input_flux,
-                                     StarStencil<double> &output_velocity,
-                                     StarStencil<double> &output_flux);
-  virtual void enthalpyStep(const EnergyModelInputs &inputs,
-                            double dt,
-                            EnergyModelStats &stats);
+  virtual void bootstrap_2d(const File &input_file);
+
+  void allocate_geometry_evolution();
+  void allocate_storage();
+  void allocate_stressbalance();
+  void allocate_basal_yield_stress();
+  void allocate_energy_model();
+  void model_state_setup();
+
+  void energy_step();
+  void hydrology_step();
+
+  stressbalance::Inputs stress_balance_inputs();
+  energy::Inputs energy_model_inputs();
+  YieldStressInputs yield_stress_inputs();
+
+  void init_diagnostics();
+
 private:
   IceModelVec2Int m_no_model_mask;
-  IceModelVec2S   m_usurf_stored, m_thk_stored, m_bmr_stored;
+  IceModelVec2S   m_usurf_stored;
+  IceModelVec2S   m_thk_stored;
+
+  std::shared_ptr<energy::CHSystem> m_ch_system;
+  IceModelVec3::Ptr m_ch_warming_flux;
 };
 
 } // end of namespace pism

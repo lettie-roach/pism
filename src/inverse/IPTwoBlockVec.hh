@@ -1,4 +1,4 @@
-// Copyright (C) 2012, 2014, 2015 David Maxwell and Constantine Khroulev
+// Copyright (C) 2012, 2014, 2015, 2017, 2021 David Maxwell and Constantine Khroulev
 //
 // This file is part of PISM.
 //
@@ -22,9 +22,9 @@
 #include <petscis.h>
 #include <petscvec.h>
 
-#include "base/util/petscwrappers/Vec.hh"
-#include "base/util/petscwrappers/IS.hh"
-#include "base/util/petscwrappers/VecScatter.hh"
+#include "pism/util/petscwrappers/Vec.hh"
+#include "pism/util/petscwrappers/IS.hh"
+#include "pism/util/petscwrappers/VecScatter.hh"
 
 namespace pism {
 namespace inverse {
@@ -32,7 +32,7 @@ namespace inverse {
 class IPTwoBlockVec {
 public:
   IPTwoBlockVec(Vec a, Vec b);
-  ~IPTwoBlockVec();
+  ~IPTwoBlockVec() = default;
 
   IS blockAIndexSet();
   IS blockBIndexSet();

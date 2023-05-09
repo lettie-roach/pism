@@ -1,4 +1,4 @@
-// Copyright (C) 2008-2016 PISM Authors
+// Copyright (C) 2008-2020 PISM Authors
 //
 // This file is part of PISM.
 //
@@ -16,17 +16,14 @@
 // along with PISM; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-#include <gsl/gsl_math.h>
+#include <gsl/gsl_math.h>       // GSL_NAN
 
-#include "base/util/IceGrid.hh"
-#include "base/util/MaxTimestep.hh"
-#include "base/util/PISMVars.hh"
-#include "base/util/io/PIO.hh"
-#include "base/util/pism_const.hh"
-#include "base/util/pism_utilities.hh"
-#include "icebin/IBSurfaceModel.hh"
-
-using namespace std;
+#include "pism/util/IceGrid.hh"
+#include "pism/util/MaxTimestep.hh"
+#include "pism/util/Vars.hh"
+#include "pism/util/io/File.hh"
+#include "pism/util/pism_utilities.hh"
+#include "pism/icebin/IBSurfaceModel.hh"
 
 namespace pism {
 namespace icebin {
@@ -35,122 +32,94 @@ namespace icebin {
 ///// ice surface temperature parameterized as in PISM-IBSurfaceModel dependent on latitude and surface elevation
 
 
-void IBSurfaceModel::create(pism::IceModelVec2S &vec, std::string const &name)
+IBSurfaceModel::IBSurfaceModel(IceGrid::ConstPtr g)
+  : SurfaceModel(g),
+    icebin_wflux(m_grid, "icebin_wflux", WITHOUT_GHOSTS),
+    icebin_deltah(m_grid, "icebin_deltah", WITHOUT_GHOSTS),
+    icebin_massxfer(m_grid, "icebin_massxfer", WITHOUT_GHOSTS),
+    icebin_enthxfer(m_grid, "icebin_enthxfer", WITHOUT_GHOSTS),
+    surface_temp(m_grid, "surface_temp", WITHOUT_GHOSTS)
 {
-    vec.create(m_grid, name, WITHOUT_GHOSTS);
-    vecs.push_back(make_pair(name, &vec));
-}
 
-
-IBSurfaceModel::IBSurfaceModel(IceGrid::ConstPtr g) : SurfaceModel(g) {
   printf("BEGIN IBSurfaceModel::allocate_IBSurfaceModel()\n");
+  icebin_wflux.set_attrs("climate_state",
+                         "constant-in-time ice-equivalent surface mass balance (accumulation/ablation) rate",
+                         "kg m-2 s-1", "kg m-2 year-1", "land_ice_surface_specific_mass_balance", 0);
 
-  create(massxfer, "massxfer");
-  massxfer.set_attrs("climate_state",
-    "Mass of ice being transferred Stieglitz --> Icebin",
-    "kg m-2 s-1", "land_ice_surface_specific_mass_balance");
-//  massxfer.metadata().set_string("glaciological_units", "kg m-2 year-1");
-//  massxfer.write_in_glaciological_units = true;
+  icebin_deltah.set_attrs(
+      "climate_state",
+      "enthalpy of constant-in-time ice-equivalent surface mass balance (accumulation/ablation) rate",
+      "W m-2", "W m-2", "", 0);
 
-  create(enthxfer, "enthxfer");
-  enthxfer.set_attrs("climate_state",
-    "Enthalpy of ice being transferred Stieglitz --> Icebin",
-    "W m-2", "land_ice_surface_specific_enth_balance");
+  icebin_massxfer.set_attrs(
+      "climate_state",
+      "enthalpy of constant-in-time ice-equivalent surface mass balance (accumulation/ablation) rate",
+      "kg m-2 s-1", "kg m-2 s-1", "", 0);
 
+  icebin_enthxfer.set_attrs("climate_state", "constant-in-time heat flux through top surface",
+                            "W m-2", "W m-2", "", 0);
 
-  // ------- Used only for mass/energy budget
-  create(deltah, "deltah");
-  deltah.set_attrs(
-      "climate_state", "enthalpy of constant-in-time ice-equivalent surface mass balance (accumulation/ablation) rate",
-      "W m-2", "");
-
-  // ------- Dirichlet Bondary condition derived from deltah
-  create(ice_top_bc_temp, "ice_top_bc_temp");
-  ice_top_bc_temp.set_attrs("climate_state",
-    "Temperature of the Dirichlet B.C.",
-    "K", "");
-
-  create(ice_top_bc_wc, "ice_top_bc_wc");
-  ice_top_bc_wc.set_attrs("climate_state",
-    "Water content of the Dirichlet B.C.",
-    "1", "");
-
+  // This variable is computed from the inputs above.
+  surface_temp.set_attrs("climate_state", "Temperature to use for Dirichlet B.C. at surface",
+                         "K", "K", "", 0);
 
   printf("END IBSurfaceModel::allocate_IBSurfaceModel()\n");
 }
 
-void IBSurfaceModel::attach_atmosphere_model_impl(atmosphere::AtmosphereModel *input) {
-  delete input;
-}
-
-void IBSurfaceModel::init_impl() {
-  m_t = m_dt = GSL_NAN; // every re-init restarts the clock
+void IBSurfaceModel::init_impl(const Geometry &geometry) {
+  (void) geometry;
 
   m_log->message(2, "* Initializing the IceBin interface surface model IBSurfaceModel.\n"
                     "  IceBin changes its state when surface conditions change.\n");
 
   // find PISM input file to read data from:
-  m_input_file = process_input_options(m_grid->com).filename;
+  m_input_file = process_input_options(m_grid->com, m_config).filename;
 
   // It doesn't matter what we set this to, it will be re-set later.
-  for (auto vec=vecs.begin(); vec != vecs.end(); ++vec) {
-    vec->second->set(0.0);
-  }
+  icebin_wflux.set(0.0);
+  icebin_deltah.set(0.0);
+  icebin_massxfer.set(0.0);
+  icebin_enthxfer.set(0.0);
+  surface_temp.set(0.0);
 
   _initialized = true;
 }
 
-MaxTimestep IBSurfaceModel::max_timestep_impl(double t) {
+MaxTimestep IBSurfaceModel::max_timestep_impl(double t) const {
   (void)t;
-  return MaxTimestep();
+  return MaxTimestep("surface icebin");
 }
 
-void IBSurfaceModel::update_impl(double my_t, double my_dt) {
-  if ((fabs(my_t - m_t) < 1e-12) && (fabs(my_dt - m_dt) < 1e-12)) {
-    return;
-  }
-
-  m_t  = my_t;
-  m_dt = my_dt;
+void IBSurfaceModel::update_impl(const Geometry &geometry, double t, double dt) {
+  (void) geometry;
+  (void) t;
+  (void) dt;
 }
 
-void IBSurfaceModel::get_diagnostics_impl(std::map<std::string, Diagnostic::Ptr> & /*dict*/,
-                                          std::map<std::string, TSDiagnostic::Ptr> & /*ts_dict*/) {
-  // empty (does not have an atmosphere model)
+const IceModelVec2S &IBSurfaceModel::mass_flux_impl() const {
+  return icebin_massxfer;
 }
 
-void IBSurfaceModel::ice_surface_mass_flux_impl(IceModelVec2S &result) {
-  result.copy_from(massxfer);
+const IceModelVec2S &IBSurfaceModel::temperature_impl() const {
+  return surface_temp;
 }
 
-void IBSurfaceModel::ice_surface_temperature_impl(IceModelVec2S &result) {
-  result.copy_from(ice_top_bc_temp);
+void IBSurfaceModel::define_model_state_impl(const File &output) const {
+  SurfaceModel::define_model_state_impl(output);
+  icebin_enthxfer.define(output);
+  icebin_wflux.define(output);
+  icebin_deltah.define(output);
+  icebin_massxfer.define(output);
+  surface_temp.define(output);
 }
 
-void IBSurfaceModel::ice_surface_liquid_water_fraction_impl(IceModelVec2S &result) {
-  result.copy_from(ice_top_bc_wc);
-}
-
-void IBSurfaceModel::add_vars_to_output_impl(const std::string & /*keyword*/, std::set<std::string> &result) {
-  for (auto vec=vecs.begin(); vec != vecs.end(); ++vec) {
-    result.insert(vec->first);
-  }
-  // does not call atmosphere->add_vars_to_output().
-}
-
-void IBSurfaceModel::define_variables_impl(const std::set<std::string> &vars, const PIO &nc, IO_Type nctype) {
-  SurfaceModel::define_variables_impl(vars, nc, nctype);
-
-  for (auto vec=vecs.begin(); vec != vecs.end(); ++vec) {
-    if (set_contains(vars, vec->first))
-      vec->second->define(nc, nctype);
-  }
-}
-
-void IBSurfaceModel::write_variables_impl(const std::set<std::string> &vars, const PIO &nc) {
-  for (auto vec=vecs.begin(); vec != vecs.end(); ++vec) {
-    if (set_contains(vars, vec->first)) vec->second->write(nc);
-  }
+void IBSurfaceModel::write_model_state_impl(const File &output) const {
+  SurfaceModel::write_model_state_impl(output);
+  icebin_enthxfer.write(output);
+  icebin_wflux.write(output);
+  icebin_deltah.write(output);
+  icebin_massxfer.write(output);
+  surface_temp.write(output);
 }
 
 } // end of namespace surface

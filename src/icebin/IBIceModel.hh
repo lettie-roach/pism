@@ -4,19 +4,19 @@
 // PISM Includes... want to be included first
 #include <petsc.h>
 
-#include <base/iceModel.hh>
-#include <base/util/IceGrid.hh>
+#include <pism/icemodel/IceModel.hh>
+#include <pism/util/IceGrid.hh>
 
-#include <base/util/pism_options.hh>
-#include <coupler/atmosphere/PAFactory.hh>
-#include <coupler/ocean/POFactory.hh>
-#include <coupler/surface/PSFactory.hh>
+#include <pism/util/pism_options.hh>
+#include <pism/coupler/atmosphere/Factory.hh>
+#include <pism/coupler/ocean/Factory.hh>
+#include <pism/coupler/surface/Factory.hh>
+#include <pism/hydrology/NullTransport.hh>
 
-#include <base/util/PISMTime.hh>
+#include <pism/util/Time.hh>
 // --------------------------------
-#include <icebin/IBSurfaceModel.hh>
-#include <icebin/MassEnergyBudget.hh>
-#include <icebin/NullTransportHydrology.hh>
+#include <pism/icebin/IBSurfaceModel.hh>
+#include <pism/icebin/MassEnergyBudget.hh>
 
 // Stuff defined in the icebin library
 // (NOT a dependency of ours)
@@ -63,31 +63,26 @@ protected:
 
   // Output variables prepared for return to GCM
   // (relevant ice model state to be exported)
-
-  // Specific enthalpy at surface of the ice sheet [J kg-1]
-  pism::IceModelVec2S ice_top_senth;
-
-public:
-  // Elevation of ice grid cells, with NaN off the ice sheet [m]
-  pism::IceModelVec2S elevmask_ice;
-  // Elevation of ice+bare land grid cells, with NaN in the ocean [m]
-  pism::IceModelVec2S elevmask_land;
+  pism::IceModelVec2S M1, M2;
+  pism::IceModelVec2S H1, H2;
+  pism::IceModelVec2S V1, V2;
 
 protected:
   // see iceModel.cc
-  virtual void createVecs();
+  virtual void allocate_storage();
 
 public:
-  virtual void accumulateFluxes_massContExplicitStep(
-    int i, int j,
-    double surface_mass_balance, // [m s-1] ice equivalent (from PISM)
-    double basal_melt_rate,      // [m s-1] ice equivalent
-    double divQ_SIA,             // [m s-1] ice equivalent
-    double divQ_SSA,             // [m s-1] ice equivalent
-    double Href_to_H_flux,       // [m s-1] ice equivalent
-    double nonneg_rule_flux);    // [m s-1] ice equivalent
-  virtual void massContExplicitStep();
-
+  virtual void massContExplicitStep(double dt,
+                                    const IceModelVec2Stag &diffusive_flux,
+                                    const IceModelVec2V &advective_velocity);
+  virtual void accumulateFluxes_massContExplicitStep(int i, int j,
+                                                     double surface_mass_balance, // [m s-1] ice equivalent (from PISM)
+                                                     double meltrate_grounded,    // [m s-1] ice equivalent
+                                                     double meltrate_floating,    // [m s-1] ice equivalent
+                                                     double divQ_SIA,             // [m s-1] ice equivalent
+                                                     double divQ_SSA,             // [m s-1] ice equivalent
+                                                     double Href_to_H_flux,       // [m s-1] ice equivalent
+                                                     double nonneg_rule_flux);    // [m s-1] ice equivalent
 private:
   // Temporary variables inside massContExplicitStep()
   double _ice_density;              // From config
@@ -96,7 +91,7 @@ private:
 
 private:
   // Utility function
-  void prepare_nc(std::string const &fname, std::unique_ptr<pism::PIO> &nc);
+  void prepare_nc(std::string const &fname, std::unique_ptr<pism::File> &nc);
 
 public:
   /** @param t0 Time of last time we coupled. */
@@ -105,14 +100,14 @@ public:
   void reset_rate();
 
 
-  std::unique_ptr<pism::PIO> pre_mass_nc; //!< Write variables every time massContPostHook() is called.
-  std::unique_ptr<pism::PIO> post_mass_nc;
-  std::unique_ptr<pism::PIO> pre_energy_nc;
-  std::unique_ptr<pism::PIO> post_energy_nc;
+  std::unique_ptr<pism::File> pre_mass_nc; //!< Write variables every time massContPostHook() is called.
+  std::unique_ptr<pism::File> post_mass_nc;
+  std::unique_ptr<pism::File> pre_energy_nc;
+  std::unique_ptr<pism::File> post_energy_nc;
 
   // see iceModel.cc for implementation of constructor and destructor:
   /** @param gcm_params Pointer to IceModel::gcm_params.  Lives at least as long as this object. */
-  IBIceModel(IceGrid::Ptr g, Context::Ptr context, IBIceModel::Params const &_params);
+  IBIceModel(IceGrid::Ptr g, std::shared_ptr<Context> context, IBIceModel::Params const &_params);
   virtual ~IBIceModel(); // must be virtual merely because some members are virtual
 
   virtual void allocate_subglacial_hydrology();
@@ -124,10 +119,10 @@ public:
 
   /** @return Our instance of IBSurfaceModel */
   pism::icebin::IBSurfaceModel *ib_surface_model() {
-    return dynamic_cast<IBSurfaceModel *>(m_surface);
+    return dynamic_cast<IBSurfaceModel *>(m_surface.get());
   }
-  pism::icebin::NullTransportHydrology *null_hydrology() {
-    return dynamic_cast<NullTransportHydrology *>(pism::IceModel::m_subglacial_hydrology);
+  pism::hydrology::NullTransport* null_hydrology() {
+    return dynamic_cast<hydrology::NullTransport *>(pism::IceModel::m_subglacial_hydrology.get());
   }
 
 
@@ -140,11 +135,7 @@ public:
     return t_TempAge;
   }
 
-  // I added these...
-  void massContPreHook();
-  void massContPostHook();
-  // Pre and post for energy
-  void energyStep();
+  void energy_step();
 
   void prepare_outputs(double time_s);
 
@@ -152,7 +143,7 @@ public:
     the first coupling timestep (eg, ice surface enthalpy) */
   void prepare_initial_outputs();
 
-  /** Merges surface temperature derived from m_ice_enthalpy into any NaN values
+  /** Merges surface temperature derived from the energy balance model into any NaN values
     in the vector provided.
     @param deltah IN: Input from Icebin (change in enthalpy of each grid
         cell over the timestep) [W m-2].

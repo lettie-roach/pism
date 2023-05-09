@@ -1,6 +1,6 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 #
-# Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016 Ed Bueler and Constantine Khroulev and David Maxwell
+# Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016, 2018, 2021 Ed Bueler and Constantine Khroulev and David Maxwell
 #
 # This file is part of PISM.
 #
@@ -20,15 +20,15 @@
 
 
 import PISM
+from PISM.util import convert
 import math
 
 context = PISM.Context()
-unit_system = context.unit_system
 
 L = 50.e3  # // 50km half-width
 H0 = 500  # // m
 dhdx = 0.005  # // pure number, slope of surface & bed
-nu0 = PISM.convert(unit_system, 30.0, "MPa year", "Pa s")
+nu0 = convert(30.0, "MPa year", "Pa s")
 tauc0 = 1.e4  # // 1kPa
 
 
@@ -36,12 +36,14 @@ class test_linear(PISM.ssa.SSAExactTestCase):
 
     def _initGrid(self):
         self.grid = PISM.IceGrid.Shallow(PISM.Context().ctx, L, L, 0, 0,
-                                         self.Mx, self.My, PISM.NONE)
+                                         self.Mx, self.My,
+                                         PISM.CELL_CORNER,
+                                         PISM.NOT_PERIODIC)
 
     def _initPhysics(self):
         config = self.config
-        config.set_boolean("basal_resistance.pseudo_plastic.enabled", True)
-        config.set_double("basal_resistance.pseudo_plastic.q", 1.0)
+        config.set_flag("basal_resistance.pseudo_plastic.enabled", True)
+        config.set_number("basal_resistance.pseudo_plastic.q", 1.0)
 
         enthalpyconverter = PISM.EnthalpyConverter(config)
 
@@ -61,15 +63,15 @@ class test_linear(PISM.ssa.SSAExactTestCase):
         vecs.tauc.set(tauc0)
 
         vel_bc = vecs.vel_bc
-        bc_mask = vecs.bc_mask
-        bc_mask.set(0)
+        vel_bc_mask = vecs.vel_bc_mask
+        vel_bc_mask.set(0)
 
         grid = self.grid
-        with PISM.vec.Access(comm=[bc_mask, vel_bc]):
+        with PISM.vec.Access(comm=[vel_bc_mask, vel_bc]):
             for (i, j) in grid.points():
                 edge = ((j == 0) or (j == grid.My() - 1)) or ((i == 0) or (i == grid.Mx() - 1))
                 if edge:
-                    bc_mask[i, j] = 1
+                    vel_bc_mask[i, j] = 1
                     x = grid.x(i)
                     y = grid.y(j)
                     [u, v] = self.exactSolution(i, j, x, y)
@@ -83,25 +85,23 @@ class test_linear(PISM.ssa.SSAExactTestCase):
         se.set_min_thickness(4000 * 10)
 
         # For the benefit of SSAFD on a non-periodic grid
-        self.config.set_boolean("stress_balance.ssa.compute_surface_gradient_inward", True)
+        self.config.set_flag("stress_balance.ssa.compute_surface_gradient_inward", True)
 
     def exactSolution(self, i, j, x, y):
-        tauc_threshold_velocity = self.config.get_double("basal_resistance.pseudo_plastic.u_threshold",
+        tauc_threshold_velocity = self.config.get_number("basal_resistance.pseudo_plastic.u_threshold",
                                                          "m/second")
-        sys = self.grid.ctx().unit_system()
-        v0 = PISM.convert(sys, 100, "m/year", "m/second")
+
+        v0 = convert(100, "m/year", "m/second")
         alpha = math.sqrt((tauc0 / tauc_threshold_velocity) / (4 * nu0 * H0))
         return [v0 * math.exp(-alpha * (x - L)), 0]
+
 
 # The main code for a run follows:
 if __name__ == '__main__':
     context = PISM.Context()
+    config = context.config
 
     PISM.set_abort_on_sigint(True)
 
-    Mx = PISM.optionsInt("-Mx", "Number of grid points in x-direction", default=61)
-    My = PISM.optionsInt("-My", "Number of grid points in y-direction", default=61)
-    output_file = PISM.optionsString("-o", "output file", default="test_linear.nc")
-
-    tc = test_linear(Mx, My)
-    tc.run(output_file)
+    tc = test_linear(int(config.get_number("grid.Mx")), int(config.get_number("grid.My")))
+    tc.run(config.get_string("output.file_name"))

@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-# Copyright (C) 2011-2012, 2014, 2016 The PISM Authors
+# Copyright (C) 2011-2012, 2014, 2016, 2017 The PISM Authors
 
 # script to generate figure: results from SeaRISE experiments
 # usage:  if UAFX_G_D3_C?_??.nc are result NetCDF files then do
@@ -10,7 +10,7 @@
 try:
     from netCDF4 import Dataset as CDF
 except:
-    print "netCDF4 is not installed!"
+    print("netCDF4 is not installed!")
     sys.exit(1)
 
 from numpy import zeros
@@ -34,10 +34,12 @@ t_a = options.t_a
 t_e = options.t_e
 
 # first name in this list is CONTROL
-NCNAMES = [model + "_G_D3_C1_E0.nc", model + "_G_D3_C2_E0.nc", model + "_G_D3_C3_E0.nc", model + "_G_D3_C4_E0.nc", model + "_G_D3_C1_S1.nc", model + "_G_D3_C1_S2.nc", model + "_G_D3_C1_S3.nc", model + "_G_D3_C1_M1.nc", model + "_G_D3_C1_M2.nc", model + "_G_D3_C1_M3.nc", model + "_G_D3_C1_T1.nc"]
+NCNAMES = [model + "_G_D3_C1_E0.nc", model + "_G_D3_C2_E0.nc", model + "_G_D3_C3_E0.nc", model + "_G_D3_C4_E0.nc", model + "_G_D3_C1_S1.nc", model +
+           "_G_D3_C1_S2.nc", model + "_G_D3_C1_S3.nc", model + "_G_D3_C1_M1.nc", model + "_G_D3_C1_M2.nc", model + "_G_D3_C1_M3.nc", model + "_G_D3_C1_T1.nc"]
 
 # labels
-labels = ["AR4 A1B", "AR4 A1B 1.5x", "AR4 A1B 2x", "2x basal sliding", "2.5x basal sliding", "3x basal sliding", "2 m/a bmr", "20 m/a bmr", "200 m/a bmr", "AR4 A1B + 2x sliding"]
+labels = ["AR4 A1B", "AR4 A1B 1.5x", "AR4 A1B 2x", "2x basal sliding", "2.5x basal sliding",
+          "3x basal sliding", "2 m/a bmr", "20 m/a bmr", "200 m/a bmr", "AR4 A1B + 2x sliding"]
 # line colors
 colors = ['#984EA3',  # violet
           '#984EA3',  # violet
@@ -52,7 +54,7 @@ colors = ['#984EA3',  # violet
 
 dashes = ['-', '--', '-.', '-', '--', '-.', '-', '--', '-.', '-']
 
-print "control run name is " + NCNAMES[0]
+print("control run name is " + NCNAMES[0])
 
 n = len(NCNAMES)
 nc0 = CDF(NCNAMES[0], 'r')
@@ -68,16 +70,16 @@ nc0.close()
 if (t_units.split()[0] == ('seconds' or 's')):
     t /= 3.15569259747e7
 
-volume_glacierized = zeros((len(t), n))
+ice_volume_glacierized = zeros((len(t), n))
 ivolshift = zeros((len(t), n - 1))
 
 for j in range(n):
     nc = CDF(NCNAMES[j], 'r')
-    volume_glacierized[:, j] = nc.variables['volume_glacierized'][t_a:t_e]
+    ice_volume_glacierized[:, j] = nc.variables['ice_volume_glacierized'][t_a:t_e]
     nc.close()
 
 for j in range(n - 1):
-    ivolshift[:, j] = volume_glacierized[:, j + 1] - volume_glacierized[:, 0]
+    ivolshift[:, j] = ice_volume_glacierized[:, j + 1] - ice_volume_glacierized[:, 0]
 
 # "2,850,000 km3 of ice were to melt, global sea levels would rise 7.2 m"
 scale = 7.2 / 2.850e6

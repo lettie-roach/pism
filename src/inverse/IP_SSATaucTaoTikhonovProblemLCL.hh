@@ -1,4 +1,4 @@
-// Copyright (C) 2012, 2014, 2015, 2016  David Maxwell and Constantine Khroulev
+// Copyright (C) 2012, 2014, 2015, 2016, 2017, 2021  David Maxwell and Constantine Khroulev
 //
 // This file is part of PISM.
 //
@@ -25,7 +25,7 @@
 
 #include "TaoUtil.hh"
 #include "IPTwoBlockVec.hh"
-#include "base/util/iceModelVec.hh"
+#include "pism/util/iceModelVec.hh"
 #include "IP_SSATaucForwardProblem.hh"
 #include "functional/IPFunctional.hh"
 
@@ -94,7 +94,7 @@ public:
   IP_SSATaucTaoTikhonovProblemLCL(IP_SSATaucForwardProblem &ssaforward, DesignVec &d0, StateVec &u_obs, double eta,
                                   IPFunctional<DesignVec> &designFunctional, IPFunctional<StateVec> &stateFunctional);
 
-  virtual ~IP_SSATaucTaoTikhonovProblemLCL();
+  virtual ~IP_SSATaucTaoTikhonovProblemLCL() = default;
 
   virtual void addListener(Listener::Ptr listener) {
     m_listeners.push_back(listener);
@@ -125,11 +125,9 @@ public:
 
 protected:
 
-  void construct();
-
   IP_SSATaucForwardProblem &m_ssaforward;
 
-  std::auto_ptr<IPTwoBlockVec> m_x;
+  std::unique_ptr<IPTwoBlockVec> m_x;
 
   DesignVec m_dGlobal;
   DesignVec::Ptr m_d;

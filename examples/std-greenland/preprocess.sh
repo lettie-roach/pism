@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2009-2014, 2016 The PISM Authors
+# Copyright (C) 2009-2014, 2016, 2017, 2018, 2019, 2020 The PISM Authors
 
 # Downloads SeaRISE "Present Day Greenland" master dataset NetCDF file, adjusts
 # metadata, and saves under new name ready for PISM.  See README.md.
@@ -52,7 +52,14 @@ ncatted -O -a units,climatic_mass_balance,m,c,"kg m-2 year-1" $PISMVERSION
 ncks -O -v mapping,lat,lon,bheatflx,topg,thk,precipitation,ice_surface_temp,climatic_mass_balance \
   $PISMVERSION $PISMVERSION
 # add projection information
-ncatted -O -a proj4,global,c,c,"+proj=stere +lat_0=90 +lat_ts=71 +lon_0=-39 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs" $PISMVERSION
+ncatted -O -a proj,global,c,c,"+proj=stere +lat_0=90 +lat_ts=71 +lon_0=-39 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs" $PISMVERSION
+ncap2 -A \
+      -s 'land_ice_area_fraction_retreat=0 * thk' \
+      -s 'where(thk > 0 || topg > 0) land_ice_area_fraction_retreat=1' \
+      -s 'land_ice_area_fraction_retreat@units="1"' \
+      $PISMVERSION $PISMVERSION
+ncatted -a standard_name,land_ice_area_fraction_retreat,d,, $PISMVERSION
+
 echo "done."
 echo
 
@@ -61,9 +68,9 @@ echo
 TEMPSERIES=pism_dT.nc
 echo -n "creating paleo-temperature file $TEMPSERIES from $DATANAME ... "
 ncks -O -v oisotopestimes,temp_time_series $DATANAME $TEMPSERIES
-ncrename -O -d oisotopestimes,time \
-            -v oisotopestimes,time \
-            -v temp_time_series,delta_T $TEMPSERIES
+ncrename -O -d oisotopestimes,time      $TEMPSERIES
+ncrename -O -v temp_time_series,delta_T $TEMPSERIES
+ncrename -O -v oisotopestimes,time      $TEMPSERIES
 # reverse time dimension
 ncpdq -O --rdr=-time $TEMPSERIES $TEMPSERIES
 # make times follow same convention as PISM
@@ -75,13 +82,13 @@ echo "done."
 echo
 
 # extract paleo-climate time series into files suitable for option
-# -ocean ...,delta_SL
+# -sea_level ...,delta_SL
 SLSERIES=pism_dSL.nc
 echo -n "creating paleo-sea-level file $SLSERIES from $DATANAME ... "
 ncks -O -v sealeveltimes,sealevel_time_series $DATANAME $SLSERIES
-ncrename -O -d sealeveltimes,time \
-            -v sealeveltimes,time \
-            -v sealevel_time_series,delta_SL $SLSERIES
+ncrename -O -d sealeveltimes,time $SLSERIES
+ncrename -O -v sealeveltimes,time $SLSERIES
+ncrename -O -v sealevel_time_series,delta_SL $SLSERIES
 # reverse time dimension
 ncpdq -O --rdr=-time $SLSERIES $SLSERIES
 # make times follow same convention as PISM

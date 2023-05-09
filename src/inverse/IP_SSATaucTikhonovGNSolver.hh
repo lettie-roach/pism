@@ -1,4 +1,4 @@
-// Copyright (C) 2012, 2014, 2015, 2016  David Maxwell
+// Copyright (C) 2012, 2014, 2015, 2016, 2017, 2019, 2020, 2021  David Maxwell
 //
 // This file is part of PISM.
 //
@@ -20,10 +20,10 @@
 #define IP_SSATAUCTIKHONOVGN_HH_SIU7F33G
 
 #include "IP_SSATaucForwardProblem.hh"
-#include "base/util/TerminationReason.hh"
-#include "base/util/error_handling.hh"
-#include "base/util/iceModelVec.hh"
-#include "base/util/petscwrappers/KSP.hh"
+#include "pism/util/TerminationReason.hh"
+#include "pism/util/error_handling.hh"
+#include "pism/util/iceModelVec.hh"
+#include "pism/util/petscwrappers/KSP.hh"
 #include "functional/IPFunctional.hh"
 
 namespace pism {
@@ -64,7 +64,7 @@ public:
   IP_SSATaucTikhonovGNSolver(IP_SSATaucForwardProblem &ssaforward, DesignVec &d0, StateVec &u_obs, double eta, 
                               IPInnerProductFunctional<DesignVec> &designFunctional, IPInnerProductFunctional<StateVec> &stateFunctional);
 
-  ~IP_SSATaucTikhonovGNSolver();
+  ~IP_SSATaucTikhonovGNSolver() = default;
   
   virtual StateVec::Ptr stateSolution() {
     return m_ssaforward.solution();
@@ -106,12 +106,12 @@ protected:
 
   virtual TerminationReason::Ptr linesearch();
 
-  void construct();
+  const unsigned int m_design_stencil_width;
+  const unsigned int m_state_stencil_width;
 
   IP_SSATaucForwardProblem &m_ssaforward;
 
   DesignVec m_x;
-  DesignVec m_y;
 
   DesignVec m_tmp_D1Global;
   DesignVec m_tmp_D2Global;
